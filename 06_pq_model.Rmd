@@ -1,0 +1,475 @@
+---
+title: "SEN Analysis"
+output: html_notebook
+---
+
+# STEP 6 - Subset based on quarantined dataset and re-run DTM and LDAs
+
+This notebook:
+1. Reads in the cleaned corpus from 01_pq_clean.Rmd ("01_pq_metaclean.csv")
+2. Removes 'quarantined' data ()
+2. creates a Document Term Matrix 
+3. trains an LDA model
+4. Uses the LDA model to predict topic categories for each article in our corpus
+5. writes the Document Term Matrix and LDA models to r data files ("*.rda")
+
+## notes to coders
+* IF ADDING NEW PLOT PLEASE CREATE NEW CHUNK
+* 90% & "quarantine"
+
+# https://github.com/tqx94/Text-Analytics_LDA
+# https://towardsdatascience.com/beginners-guide-to-lda-topic-modelling-with-r-e57a5a8e7a25
+# https://towardsdatascience.com/lda-topic-modeling-an-explanation-e184c90aadcd
+```{r, echo=FALSE, results="hide", messages=FALSE}
+# Load and Install Libraries
+source("SEN_functions.R")
+
+## Check libraries & install
+LibraryList<-c("dplyr","stringr","magrittr","data.table","tidytext","topicmodels","colorspace","purrr","ldatuning",
+               "gmp","wordcloud","RColorBrewer","ggplot2","lubridate","reshape2","textmineR","scales")
+install_or_load_pack(LibraryList)
+
+outputFolder = "Data/02_Working/"
+outputImgFolder = "Images/"
+rFileNum = "06"
+
+outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_model"))
+if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
+
+
+overwrite = FALSE
+```
+
+
+# Load cleaned corpus output from 01_pq_clean.Rmd and remove quarantine
+```{r}
+#load data
+pq_metaclean <- data.table::fread('Data/02_Working/01_pq_metaclean.csv', colClasses = 'character')
+
+# 6239 articles total
+print(paste("Number of articles", nrow(pq_metaclean)))
+
+# not_oyster_subset = if not exists in full_corpus {oyster*}
+# 2667 articles with the word "oyster" (OUT OF 6239)
+pq_metaoyster<- pq_metaclean %>% 
+  filter(stringr::str_detect(`Full text`,regex("oyster", ignore_case = T))) 
+print(paste("Number of articles with the word oyster", nrow(pq_metaoyster)))
+# Save oyster corpus to new file 
+outputFilenameOyster <- paste0(rFileNum,"_pq_metaoyster")
+outputFolder = "Data/02_Working/"
+outputFileOyster = paste(outputFolder,outputFilenameOyster,".csv",sep="")
+if (!file.exists(outputFileOyster) | overwrite) {
+  write.csv(pq_metaoyster, outputFileOyster, row.names=FALSE)
+}
+
+pq_metaqtine<- pq_metaclean %>% 
+  filter(!stringr::str_detect(`Full text`,regex("oyster", ignore_case = T))) 
+print(paste("Number of articles without the word oyster", nrow(pq_metaqtine)))
+# 3572 articles without the word "oyster" (OUT OF 6239)
+
+head(pq_metaqtine)
+
+# quarantined_subset = if exists in not_oyster_subset {clam|mussel|scallop|lobster|crab}
+# 2172 articles without "oyster" and with keywords (OUT OF 3572)
+#These are the quarantined articles that need to be examined
+pq_metaqtine_keywords <- pq_metaqtine %>% 
+  filter(stringr::str_detect(`Full text`,regex("clam|mussel|scallop|lobster|crab", ignore_case = T)))
+print(paste("Number of articles within *not oyster* that have the words clam|mussel|scallop|lobster|crab (to be removed from corpus)", nrow(pq_metaqtine_keywords)))
+# Save articles without "oyster" and with keywords (to be removed from corpus)
+outputFilenameQtine <- paste0(rFileNum,"_pq_metanotoyster_keywords")
+outputFolder = "Data/02_Working/"
+outputFileQtine = paste(outputFolder,outputFilenameQtine,".csv",sep="")
+if (!file.exists(outputFileQtine) | overwrite) {
+  write.csv(pq_metaqtine_keywords, outputFileQtine, row.names=FALSE)
+}
+
+# 1400 articles without "oyster" and without keywords (OUT OF 3572)
+pq_metaqtine_nokeywords <- pq_metaqtine %>% 
+  filter(!stringr::str_detect(`Full text`,regex("clam|mussel|scallop|lobster|crab", ignore_case = T)))
+print(paste("Number of articles within *not oyster* that do not have the words clam|mussel|scallop|lobster|crab (to be kept in corpus)", nrow(pq_metaqtine_nokeywords)))
+# Save articles without "oyster" and without keywords (to be kept in corpus)
+outputFilenameNotQtine <- paste0(rFileNum,"_pq_metanotoyster_notkeywords")
+outputFolder = "Data/02_Working/"
+outputFileNotQtine = paste(outputFolder,outputFilenameNotQtine,".csv",sep="")
+if (!file.exists(outputFileNotQtine) | overwrite) {
+  write.csv(pq_metaqtine_nokeywords, outputFileNotQtine, row.names=FALSE)
+}
+
+pq_metaqtine_ids <- pq_metaqtine_keywords %>% select(`ProQuest document ID`)
+# corpus_subset = anti_join(quarantined_subset, fullcorpus)
+
+# this is the entire corpus with quarantined articles removed
+pq_metafilter <- pq_metaclean %>%
+  anti_join(pq_metaqtine_ids, by="ProQuest document ID")
+
+numFiltered <- nrow(pq_metaclean)-nrow(pq_metafilter)
+rm(pq_metaqtine_ids);rm(pq_metaclean);rm(pq_metaoyster);rm(pq_metaqtine);rm(pq_metaqtine_keywords);rm(pq_metaqtine_nokeywords)
+
+print(paste("Number of articles removed based on words:",numFiltered));nrow(pq_metafilter)
+
+```
+
+
+# Subset to document ID and full text of each article
+```{r}
+# subset corpus to unique identifier & full text of article
+pq_metasub <- pq_metafilter %>% 
+  select(`ProQuest document ID`,`Full text`)
+rm(pq_metafilter)
+```
+
+# generate tokens based on custom_stop_words
+* Each article is treated as a separate "document"
+* we have our own "custom_stop_words" which are appended to tidytext::stop_words
+* tidytext::stop_words == "SMART"
+```{r}
+# add words to stop_words to create custom_stop_words
+# main, url, becaus, day, st, caus, mani, dont
+custom_stop_words <- bind_rows(tibble(word = c("maine","mainea","pm","am","ita", "pos","rt"),
+                                      lexicon = c("custom")),
+                               stop_words)
+outputTokenFile = paste0(rFileNum,"_tokens")
+tokens<-create_ifnot_tokens(outputFolder, outputTokenFile, pq_metasub, custom_stop_words, overwrite)
+```
+
+# In united tokens we trust & generate DocumentTermMatrix from textmineR library with 1:2 ngram
+```{r}
+outputDTMFileName <- paste0(rFileNum,"_dtm_tmr_NGram-2")
+outputUTokensFileName <-paste0(rFileNum,"_united_tokens")
+ngrams_range=c(1,2)
+
+tokens<-create_ifnot_united_tokens(outputFolder, outputUTokensFileName, tokens, overwrite)
+
+dtm<-create_ifnot_CreateDtm(outputFolder,
+                            outputDTMFileName, 
+                            ngrams_range,
+                            tokens$`Full text`,
+                            tokens$`ProQuest document ID`, 
+                            overwrite)
+
+rm(pq_metasub)
+#explore the basic frequency
+tf <- TermDocFreq(dtm = dtm)
+original_tf <- tf %>% select(term, term_freq,doc_freq)
+rownames(original_tf) <- 1:nrow(original_tf)
+# Eliminate words appearing less than 2 times or in more than half of the
+# documents
+vocabulary <- tf$term[ tf$term_freq > 1 & tf$doc_freq < nrow(dtm) / 2 ]
+dtm = dtm
+```
+
+# Running LDA
+And picking the optimal number of topics from 1 to 20 in increments of 5.
+```{r}
+# number of topics to iterate through to determine topic with highest coherence score
+numTopicList<-c(5,10,15,20)
+ldaFileNum<-rFileNum
+
+# model_list<-create_ifnot_plda(outputFolder, ldaFileNum, dtm, numTopicList, overwrite)
+# create outputFolderLDA
+outputFolderLDA <- paste0(outputFolder,ldaFileNum,"_lda_models/")
+# if the dir doesn't exist, create it
+if (!dir.exists(outputFolderLDA)) dir.create(outputFolderLDA)
+fileNameLDAList <-  paste0(outputFolderLDA,ldaFileNum,"_lda_model_list.rda")
+if (!file.exists(fileNameLDAList) | overwrite) {
+  for (numTopics in numTopicList) {
+    k_list <- seq(1, numTopics, by = 1)
+    # save all model outputs to file & run all lda in parallel (i.e., at same time; runs faster)
+    model_list <- textmineR::TmParallelApply(X = k_list, FUN = function(k){
+      fileNameLDA = file.path(outputFolderLDA, paste0(k, "_lda_topic.rda"))
+      if (!file.exists(fileNameLDA)) {
+        warning(paste("Creating new LDA:",fileNameLDA))
+        # find best model fit for each potential # of topics (1:NumTopics)
+        lda_model <- textmineR::FitLdaModel(dtm = dtm, k = k, iterations = 500)
+        # k == number of topics 
+        lda_model$k <- k
+        
+        lda_model$coherence <- textmineR::CalcProbCoherence(phi = lda_model$phi, dtm = dtm, M = 5)
+        save(lda_model, file = fileNameLDA)
+        } else {
+          warning(paste("Already exists, loading:",fileNameLDA))
+          # if does exists, load
+          load(fileNameLDA)
+          }
+      lda_model
+    }, export=c("dtm", "outputFolderLDA")) # export only needed for Windows machines
+  }
+  save(model_list, file = fileNameLDAList)
+  } else {
+    warning(paste("Already exists, loading:",fileNameLDAList))
+    # RData already exists & overwrite == FALSE; load saved RData object
+    load(file=fileNameLDAList)
+  }
+
+#model tuning
+#choosing the best model
+coherence_mat <- data.frame(k = sapply(model_list, function(x) nrow(x$phi)), 
+                            coherence = sapply(model_list, function(x) mean(x$coherence)), 
+                            stringsAsFactors = FALSE)
+```
+
+# Best topic by Coherence Score
+```{r}
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("coherence_score_topic.png"))
+png(outputPNGFileName,height=6,width=12, units='in', res=300)
+ggplot(coherence_mat, aes(x = k, y = coherence)) +
+  geom_point() +
+  geom_line(group = 1)+
+  ggtitle("Best Topic by Coherence Score") + theme_minimal() +
+  scale_x_continuous(breaks = seq(1,max(numTopicList),1)) + ylab("Coherence")
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+```
+
+
+#1. Top 20 terms based on phi
+```{r}
+#select models based on max average
+max_coherence<-which.max(coherence_mat$coherence)
+#manual_coherence<-7
+model <- model_list[max_coherence][[ 1 ]]
+
+#1. Top 20 terms based on phi
+model$top_terms <- GetTopTerms(phi = model$phi, M = 20)
+top20_wide <- as.data.frame(model$top_terms)
+top20_wide
+```
+
+# 2. word, topic relationship
+```{r, messages=FALSE}
+#looking at the terms allocated to the topic and their pr(word|topic)
+allterms <-data.frame(t(model$phi))
+allterms$word <- rownames(allterms)
+rownames(allterms) <- 1:nrow(allterms)
+allterms <- melt(allterms,idvars = "word") 
+allterms <- allterms %>% rename(topic = variable)
+FINAL_allterms <- allterms %>% group_by(topic) %>% arrange(desc(value))
+FINAL_allterms
+```
+
+# 3. Topic,word,freq
+Use this area to look at the top frequency words per topic to infer words to add as stop words
+```{r, messages=FALSE}
+
+final_summary_words <- data.frame(top_terms = t(model$top_terms))
+final_summary_words$topic <- rownames(final_summary_words)
+rownames(final_summary_words) <- 1:nrow(final_summary_words)
+final_summary_words <- final_summary_words %>% melt(id.vars = c("topic"))
+final_summary_words <- final_summary_words %>% rename(word = value) %>% select(-variable)
+final_summary_words <- left_join(final_summary_words,allterms)
+final_summary_words <- final_summary_words %>% group_by(topic,word) %>%
+  arrange(desc(value))
+final_summary_words <- final_summary_words %>% group_by(topic, word) %>% filter(row_number() == 1) %>% 
+  ungroup() %>% tidyr::separate(topic, into =c("t","topic")) %>% select(-t)
+word_topic_freq <- left_join(final_summary_words, original_tf, by = c("word" = "term"))
+word_topic_freq
+```
+
+#4. per-document-per-topic probabilities
+The probability that an article is a particular topic.
+```{r, messages=FALSE}
+#4. per-document-per-topic probabilities
+#trying to see the topic in each document
+theta_df <- data.frame(model$theta)
+theta_df$document <-rownames(theta_df) 
+rownames(theta_df) <- 1:nrow(theta_df)
+theta_df$document <- as.numeric(theta_df$document)
+theta_df <- melt(theta_df,id.vars = "document")
+theta_df <- theta_df %>% rename(topic = variable) 
+theta_df <- theta_df %>% tidyr::separate(topic, into =c("t","topic")) %>% select(-t)
+FINAL_document_topic <- theta_df %>% group_by(document) %>% 
+  arrange(desc(value)) %>% filter(row_number() ==1)
+# value here corresponds to probability of document being a particular topic
+# with 2 topics, there is fairly strong 
+FINAL_document_topic;nrow(FINAL_document_topic)
+```
+
+
+
+
+
+# Count of Articles per Topic
+As bar chart
+```{r, messages=FALSE}
+plotTitle = "Count of Articles per Topic"
+
+# count by topic
+count_topic <-FINAL_document_topic %>%
+  group_by(topic) %>%
+  summarise(n= n(), perc = percent(n()/nrow(FINAL_document_topic))) %>%
+  arrange(as.numeric(topic),n)
+
+count_topic
+
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("topic_count_bar.png"))
+png(outputPNGFileName,height=6,width=12, units='in', res=300)
+ggplot(count_topic, aes(x = as.factor(as.numeric(topic)), y = n, label = n, fill=as.factor(as.numeric(topic)))) +
+  geom_bar(width = 1,stat = "identity") +
+  ggtitle(plotTitle) +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Topic") +
+  ylab("Article Count") +
+  labs(fill = "Topic")
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+```
+As pie chart
+```{r, messages=FALSE}
+plotTitle = "Articles per Topic"
+
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("topic_count_pie.png"))
+png(outputPNGFileName,height=6,width=6, units='in', res=300)
+ggplot(count_topic, aes(x = "", y=n, label = perc, fill =as.factor(as.numeric(topic)))) +
+  geom_bar(width = 1,stat = "identity") +
+  coord_polar("y") +
+  ggtitle(plotTitle) +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x=element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank()) +
+  xlab("Topic") +
+  ylab("Article Count") +
+  labs(fill = "Topic")
+
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+```
+
+# histogram of topic probabilities
+Distribution of article probabilities by topic.
+```{r, messages=FALSE}
+plotTitle = "Topic Probabilities"
+numRows<-nrow(FINAL_document_topic)
+numBins <- round(numRows*.01)
+
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("prob_topic.png"))
+png(outputPNGFileName,height=6,width=12, units='in', res=300)
+ggplot(FINAL_document_topic, aes(value, fill=as.factor(as.numeric(topic)))) +
+  geom_histogram(bins=numBins) +
+  ggtitle(plotTitle) +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  xlab("Probability") +
+  ylab("Article Count") +
+  labs(fill = "Topic")
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+```
+
+# Count of Articles by Topic and Probability Range
+Count of article probabilities by probability range and topic.
+```{r, messages=FALSE}
+plotTitle = "Count of Articles by Topic and Probability Range"
+
+# count by 10% breaks each topic
+prob_count_topic <-FINAL_document_topic %>% 
+  group_by(range=cut(value, breaks= seq(0, 1, by = 0.10)), topic) %>% 
+  summarise(n= n()) %>%
+  arrange(topic,as.numeric(range))
+
+prob_count_topic
+
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("prob_topic_count.png"))
+png(outputPNGFileName,height=6, width=12, units='in', res=300)
+ggplot(prob_count_topic, aes(x = range, y = n, fill = as.factor(as.numeric(topic)), label = n)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  ggtitle(plotTitle) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Probability Range") +
+  ylab("Article Count") +
+  labs(fill = "Topic")
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+```
+# Count of Articles by Probability Range
+```{r, messages=FALSE}
+plotTitle = "Count of Articles by Probability Range"
+
+# count by 10% breaks
+prob_count<-FINAL_document_topic %>% 
+  group_by(range=cut(value, breaks= seq(0, 1, by = 0.10))) %>% 
+  summarise(n= n()) %>%
+  arrange(as.numeric(range))
+
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("prob_count.png"))
+png(outputPNGFileName,height=6,width=12, units='in', res=300)
+ggplot(prob_count, aes(x = range, y = n, label = n, fill=range)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  ggtitle(plotTitle) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Probability Range") +
+  ylab("Article Count") +
+  labs(fill = "Probability Range")
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+```
+
+
+# Save to labeled corpus to 02_pq_labels.csv
+```{r}
+# Save cleaned corpus to new file 
+outputFileNameLabels <- paste0(rFileNum,"_pq_labels")
+outputFileLabels<-paste(outputFolder,outputFileNameLabels,".csv",sep="")
+# don't want to lose any part of the document ID, so saving as character
+FINAL_document_topic$document <- as.character(FINAL_document_topic$document)
+# reformat value to 5 sig figs
+FINAL_document_topic$val<-formatC(signif(FINAL_document_topic$value,digits=5), digits=5,format="fg", flag="#")
+# drop old value column
+FINAL_document_topic$value<-NULL
+head(FINAL_document_topic);nrow(FINAL_document_topic)
+if (!file.exists(outputFileLabels) | overwrite) {
+  write.csv(FINAL_document_topic, outputFileLabels, row.names=FALSE)
+}
+```
+
+#5. Visualising of topics in a dendrogram
+Shows the 'similarity' between topics.
+```{r}
+#probability distributions called Hellinger distance, distance between 2 probability vectors
+if (max_coherence>2) {
+  model$topic_linguistic_dist <- textmineR::CalcHellingerDist(model$phi)
+  model$hclust <- hclust(as.dist(model$topic_linguistic_dist), "ward.D")
+  model$hclust$labels <- paste(model$hclust$labels, model$labels[ , 1])
+  # save plot in png format
+  outputPNGFileName <- file.path(outputPngFolder,paste0("hclust_dendrogram.png"))
+  png(outputPNGFileName,height=6,width=12, units='in', res=300)
+  plot(model$hclust)
+  print(paste("Plot saved as:",outputPNGFileName))
+  dev.off()
+}
+```
+
+# optimized topic wordclouds
+wordclouds of the top words in each topic.
+```{r}
+#visualising topics of words based on the max value of phi
+set.seed(1234)
+#pdf("cluster.pdf")
+pal2 <- brewer.pal(8,"Dark2")
+
+
+
+for(i in 1:length(unique(final_summary_words$topic))){ 
+  outputPNGFileName <- file.path(outputPngFolder,paste0(i,"_lda_topic_wc.png"))
+  #print(outputPNGFileName)
+  png(outputPNGFileName,height=6,width=6, units='in', res=300)
+  wordcloud(words = subset(final_summary_words ,topic == i)$word, 
+                                            freq = subset(final_summary_words ,topic == i)$value, scale=c(8,.2), min.freq = 1,
+                                            max.words=Inf, random.order=FALSE, rot.per=.15, 
+                                            colors=pal2)
+  
+  dev.off()
+  print(paste("Plot saved as:",outputPNGFileName))
+  }
+```

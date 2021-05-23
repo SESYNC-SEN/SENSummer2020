@@ -1,0 +1,144 @@
+---
+title: "Structure for Unstructured Data"
+output: html_notebook
+---
+# https://cyberhelp.sesync.org/text-mining-lesson/course/
+# Structure for Unstructured Data
+Lesson 5 with Rachael Blake
+
+## Structured Data
+Structured data is a collection of multiple observations, each composed of one or more variables. Most analyses typically begin with structured data, the kind of tables you can view as a spreadhseet or numerical array.
+
+The key to structure is that information is packaged into well-defined variables, e.g. the columns of a tidy data frame. Typically, it took someone a lot of effort to get information into a useful structure.
+
+## Well-defined Variables
+<img>
+
+## Variable Classification
+Every variable fits within one of four categories—these are more general categories than you find when enumerating “data types” as understood by R or Python.
+
+<tbl>
+Category	Definition
+Numeric (or Interval)	Values separated by meaningful intervals/distances
+Ordered	Ordered values without “distance” between them
+Categorical	Finite set of distinct, un-ordered values
+Qualitative	Unlimited, discrete, and un-ordered possibilities
+
+What we call quantitative data is actually any one of the first three.
+
+### Question
+What is one example of each of the three types of quantitative data (interval, ordered, and categorical) a biological survey might produce?
+### Answer
+For example, a fisheries survey might record size, age class (juvenile, adult), and species.
+### Question
+What is an example of qualitative data the same biological survey might collect?
+### Answer
+Surveys often collect descriptive data, e.g. description of micro-habitat where an organism was found.
+
+##Unstructured Data
+Information that has not been carved up into variables is unstructured “data”— although some say that is a misnomer. Any field researcher knows when they are staring down raw information, and they are usually puzzling over how to collect or structure it.
+
+<img>
+Suppose you want to collect data on how businesses fail, so you download half a million e-mails from Enron executives that preceeded the energy company’s collapse in 2001.
+
+Message-ID: <16986095.1075852351708.JavaMail.evans@thyme>
+Date: Mon, 3 Sep 2001 12:24:09 -0700 (PDT)
+From: greg.whalley@enron.com
+To: kenneth.lay@enron.com, j..kean@enron.com
+Subject: FW: Management Committee Offsite
+
+I'm sorry I haven't been more involved is setting this up, but I think the
+agenda looks kond of soft.  At a minimum, I would like to turn the schedule
+around and hit the hard subjects like Q3, risk management, and ...
+
+
+Structuring the data for analysis does not mean you quantify everything, although certainly some information can be quantified. Rather, turning unstructured information into structured data is a process of identifying concepts, definining variables, and assigning their values (i.e. taking measurements) from the text.
+
+Possible examples for variables of different classes to associate with the Enron e-mails.
+
+<tbl>
+Category	Example
+Numeric (or Interval)	timestamp, e-mail length, occurrences of a given topic
+Ordered	sender’s position in the company, step in process-tracing sequence of events
+Categorical	sender’s department in the company, sender-recipient paris (e.g. network)
+Qualitative	message subject matter, sender’s sentiment
+
+### Question
+What distinguishes data from unstructured information? What distinguishes qualitative data from unstructured information?
+### Answer
+Data is the measurement of a variable that relates to a well-defined concept, while information is free of any analytical framework. Data is qualitative if its measurement could give any value and no measure of distance exists for any pair of values.
+Processing of texts, surveys, recordings, etc. into variables (whether qualitative or not), is often described as qualitiative data analysis.
+
+
+## Computer Assisted QDA
+* Coding
+** Annotating a document collection by highlighting shared themes (CAQDA).
+** e.g. highlighting sections of an email collection with “codes” or “themes”
+* Scraping
+** Process digitized information (websites, texts, images, recordings) into structured data.
+** e.g. capture sender, date, and greeting from emails, storing values in a data frame
+* Text Mining
+** Processing text on the way to producing qualitative or quantitative data
+** e.g. bag-of-words matrix
+* Topic Modeling
+** Algorithms for automatic coding of extensive document collections.
+** e.g. latent Dirichlet allocation (LDA)
+
+These are different ways of performing “feature engineering”, which requires both domain knowledge and programing skill. The feature engineer faces the dual challenges of linking concepts to variables and of creating structured data about these variables from a source of raw information.
+
+## Scraping
+For text analysis, whether online or following document OCR, few tools are as useful for pulling out strings that represent a value than “regular expressions”.
+<img>
+
+RegEx is a very flexible, and very fast, program for finding bits of text within a document that has particular features defined as a “pattern”.
+
+<tbl>
+Pattern	String with match
+Subject:.*	Subject: Re: TPS Reports
+\$[0-9,]+	The ransom of $1,000,000 to Dr. Evil.
+\b\S+@\S+\b	E-mail info@sesync.org or tweet @SESYNC for details!
+
+Specifying these patterns correctly can be tricky. This is a useful site for testing out regex patterns here.
+
+Note that “\” must be escaped in R, so the third pattern does not look very nice in a R string.
+
+```{r}
+library(stringr)
+
+str_extract_all(
+  'Email info@sesync.org or tweet @SESYNC for details!',
+  '\\b\\S+@\\S+\\b')
+```
+
+Continuing with the Enron emails theme, begin by collecting the documents for analysis with the tm package.
+
+
+```{r}
+library(tm)
+
+enron <- VCorpus(DirSource("../../data/enron"))
+email <- enron[[1]]
+```
+
+```{r}
+# console
+meta(email)
+```
+
+```{r}
+# console
+content(email)
+```
+
+The RegEx pattern ^From: .* matches any whole line that begins with “From: “. Parentheses cause parts of the match to be captured for substitution or extraction.
+
+```{r}
+match <- str_match(content(email), '^From: (.*)')
+head(match)
+```
+
+## Data Extraction
+The meta object for each e-mail was sparsely populated, but some of those variables can be extracted from the content.
+
+
+.. too tired, just ctrl+f and wrap up tomorrow

@@ -1,0 +1,424 @@
+---
+title: "Manipulating Tabular Data"
+output: html_notebook
+---
+
+# https://cyberhelp.sesync.org/census-data-manipulation-in-R-lesson/course/
+Lesson 4 with Mary Glover
+
+# Lesson Objectives
+Review what makes a dataset tidy.
+Meet a complete set of functions for most table manipulations.
+Learn to transform datasets with split-apply-combine procedures.
+Understand the basic join operation.
+
+# Specific Achievements
+* Reshape data frames with tidyr
+* Summarize data by groups with dplyr
+* Combine multiple data frame operations with pipes
+* Combine multiple data frames with “joins”
+
+Data frames occupy a central place in R analysis pipelines. While the base R functions provide most necessary tools to subset, reformat and transform data frames, the specialized packages in this lesson offer friendlier and often computationally faster ways to perform common data frame processing steps. The uniform syntax of the tidyr and dplyr packages also makes scripts more readable and easier to debug. The key functions in both packages have close counterparts in SQL (Structured Query Language), which provides the added bonus of facilitating translation between R and relational databases.
+
+# Pivot_longer
+The tidyr package can be used to reshape “wide” data frames into “long,” tidy data frame. By making each observation a single row, it “lengthens” the data.
+
+We can use tidyr pivot_longer function to reshape the table for drug trial data from above (named trial) into a tidy data frame.
+
+```{r}
+library(tidyr)
+
+tidy_trial <- pivot_longer(trial, 
+                           cols = c(drug, control, placebo), 
+                           names_to = 'treatment', 
+                           values_to = 'response')
+
+```
+
+All columns, except for “block”, are stacked in two columns: a “name” and a “value”, as specified by the cols arguement. The name column gets the name treatment from the names_to argument, and the value column receives the name response from the values_to argument. For each row in the result, the “name” (treatment) is taken from the name of the column and the “value” (response) from the data in the column. The resulting table is saved as tidy_trial.
+
+Some notes on the syntax: a big advantage of tidyr and dplyr is that each function takes a data frame as its first argument and returns a new data frame. As we will see later, it makes it very easy to chain these functions in a pipeline. All functions also use column names as variables without subsetting them from a data frame (i.e. block instead of trial$block).
+
+```{r}
+# console
+tidy_trial
+```
+
+# Pivot_wider
+Data can also fail to be tidy when a table is too long. The Entity-Attribute-Value (EAV) structure common in large databases distributes multiple attributes of a single entity/observation into separate rows.
+
+Remember that the exact state of “tidy” may depend on the analysis: the key is knowing what counts as a complete observation. For example, the community ecology package vegan requires a matrix of species counts, where rows correspond to species and columns to sites. This may seem like too “wide” a format, but in several multi-variate analyses, the abundance of a species across multiple sites is considered a complete observation.
+
+Consider survey data on participant’s age and income stored in a EAV structure. 
+<tbl>
+
+Transform the data with the pivot_wider function, which “reverses” a pivot_longer.
+
+```{r}
+tidy_survey <- pivot_wider(survey,
+                           names_from = attr,
+                           values_from = val)
+```
+The column names for the resulting data frame tidy_survey are taken from the attr column and the data from the val column.
+
+```{r}
+# console
+tidy_survey
+```
+
+One difficulty with EAV tables is the nature of missing data; an entire row rather than a single cell is missing. It is important to evaluate how to handle the “missing data.” By default, “missing data” is coded as NA.
+
+The values_fill argument allows you to specify values for this missing data.
+```{r}
+tidy_survey <- pivot_wider(survey,
+                           names_from = attr,
+                           values_from = val,
+                           values_fill = 0)
+```
+
+```{r}
+# console
+tidy_survey
+```
+
+# Sample Data
+<img>
+To learn about data transformation with dplyr, we need more data. The Census Bureau collects subnational economic data for the U.S., releasing annual County Business Patterns (CBP) datasets including the number of establishments, employment, and payroll by industry. They also conduct the American Community Survey (ACS) and publish, among other demographic and economic variables, such as estimates of median income for individuals working in different industries.
+
+* County Business Patterns (CBP)
+* American Community Survey (ACS)
+These two datasets both contain economic variables for each U.S. county specified by different categories of industry. The data could potentially be manipulated into a single table reflecting the following statistical model.
+
+<forumla>
+First, load the CBP data. fread from data.table is faster at reading large data sets than base R read.csv.
+
+```{r}
+library(data.table)
+cbp <- fread('data/cbp15co.csv')
+```
+
+
+```{r}
+# console
+str(cbp)
+
+```
+
+The CBP dataset includes NAICS (North American Industry Classification System) industry codes and the number of businesses or establishments of different employee sizes in each US county. States and counties are identified by Federal Information Processing System (FIPS) codes. See the CBP dataset documentation for an explanation of the variables we don’t discuss in this lesson.
+
+We need to modify the import to clean up this read. The data type for the state and city codes should be read in as a character type using colClasses.
+
+```{r}
+cbp <- fread(
+  '../../data/cbp15co.csv',
+  colClasses = c(
+    FIPSTATE='character',
+    FIPSCTY='character'))
+
+```
+
+Next, load the ACS data. The ACS data we are using in this example includes the median income by industry sector for each US county.
+
+```{r}
+acs <- fread(
+'../../data/ACS/sector_ACS_15_5YR_S2413.csv',
+colClasses = c(FIPS='character'))
+```
+
+```{r}
+# console
+str(acs)
+```
+
+# dplyr functions
+<tbl>
+Function	Returns
+filter	keep rows that satisfy conditions
+mutate	apply a transformation to existing [split] columns
+select	keep columns with matching names
+inner_join	merge columns from separate tables into one table
+group_by	split data into groups by an existing factor
+summarize	summarize across rows [and combine split groups]
+
+
+The table above summarizes the most commonly used functions in dplyr. We will use dplyr manipulate data frames with the U.S. Census Bureau data in order to prepare for data analysis.
+
+## Filter
+
+The cbp table includes character NAICS column for industry codes. NAICS codes can have up to 6 digits. As digits increase, the industry code becomes more specific. Of the 2 million observations, lets see how many observations are left when we keep only the 2-digit NAICS codes, representing high-level, broad sectors of the economy.
+
+We will use the filter command to only include rows where the NAICS code is 2 digits long.
+
+Empty digits are coded as “-“; we only include NAICS codes with 4 dashes using the grepl command to find these rows. The filtered data is saved as cbp2.
+
+```{r}
+library(dplyr)
+
+cbp2 <- filter(cbp,
+               grepl('----', NAICS),
+               !grepl('------', NAICS))
+```
+
+```{r}
+# console
+str(cbp2)
+```
+
+Note that a logical “and” is implied when conditions are separated by commas. (This is perhaps the main way in which filter differs from the base R subset function.) Therefore, the example above is equivalent to filter(grepl('----', NAICS) & !grepl('------', NAICS). A logical “or”, on the other hand, must be specified explicitly with the | operator.
+
+Alternatively, the stringr package makes the use of pattern matching by regular expressions a bit more maneageble, and streamlines this step.
+
+```{r}
+library(stringr)
+
+cbp2 <- filter(cbp,
+               str_detect(NAICS, '[0-9]{2}----'))
+```
+This code only inclues NAICS codes with any 2 numbers followed by 4 dashes.
+
+
+## Mutate
+
+The mutate function is the dplyr answer to updating or altering your columns. It performs operations on existing columns and appends the result as a new column of the same length.
+
+In the CBP data, FPS codes are split by state and county; however, the convention is to combine into 1 code, concatenating the 2 digit state and 3 digit county code.
+
+The mutate command will add a new column FIPS to the cbp2 data frame. Values for the FIPS column will be determined using operation str_c from the stringr package. str_c combines the FIPS state and county codes.
+
+```{r}
+library(stringr)
+
+cbp3 <- mutate(cbp2,
+               FIPS = str_c(FIPSTATE, FIPSCTY))
+```
+
+Multiple arguments to mutate produce multiple transformations.
+
+
+```{r}
+cbp3 <- mutate(cbp2,
+               FIPS = str_c(FIPSTATE, FIPSCTY),
+               NAICS = str_remove(NAICS, '-+'))
+```
+
+FIPS is a new column. But can also transform the data and rewrite an existing column as done here with NAICS to remove the dashes from the NAICS codes in the NAICS column.
+
+## Chaining Functions
+All the functions from the dplyr package take a data frame as their first argument, and they return a data frame. This consistent syntax is on purpose. It is designed for easily chaining data transformations together: creating a data pipeline that is easy to read and modify.
+
+The “pipe” operator (%>%) takes the expression on its left-hand side and inserts it, as the first argument, into the function on its right-hand side. x %>% function() is equivalent to function(x).
+
+For example, instead of sum(c(1,3,5)), we have:
+```{r}
+# console
+c(1, 3, 5) %>% sum()
+# 9
+```
+
+```{r}
+# console
+c(1, 3, 5, NA) %>% sum(na.rm = TRUE)
+# 9
+```
+
+The pipe operator’s main utility is to condense a chain of operations applied to the same piece of data, when you don’t want any intermediate results. So instead of: function_A(function_B(function_C(x))) pipes allow you to do the following: x %>% function_A() %>% function_B() %>% function_C()
+
+We can do the filter and mutate operations from above with one assignment.
+
+```{r}
+cbp <- cbp %>%
+  filter(
+    str_detect(NAICS, '[0-9]{2}----')
+    ) %>%
+  mutate(
+    FIPS = str_c(FIPSTATE, FIPSCTY),
+    NAICS = str_remove(NAICS, '-+')
+    )
+```
+
+## Select
+To keep particular columns of a data frame (rather than filtering rows), use the select function with arguments that match column names.
+```{r}
+# console
+names(cbp)
+```
+One way to “match” is by including complete names, each one you want to keep:
+
+```{r}
+# console
+cbp %>%
+  select(
+    FIPS,
+    NAICS,
+    N1_4, N5_9, N10_19 
+    )
+```
+
+Alternatively, we can use a “select helper” to match patterns.
+
+```{r}
+cbp <- cbp %>%
+  select(
+    FIPS,
+    NAICS,
+    starts_with('N')
+    )
+```
+
+The cbp data frame now only includes columns that we are interested in for the our analysis: the full FIPS county code, the NAICS industry code, and the number of establishments at different employee size classess.
+
+## Join
+The CBP dataset uses FIPS to identify U.S. counties and NAICS codes to identify types of industry. The ACS dataset also uses FIPS for counties but uses industry sectors instead of NAICS codes. The sectors are broader than the NAICS codes; with multiple NAICS codes representing a single industry sector.
+
+To combine the ACS and CBP datasets, we need to relate the NAICS codes to the industry sector.
+
+A data frame sector relates the NAICS codes to the industry sector as used in the CBP dataset.
+
+```{r}
+sector <- fread(
+'../../data/ACS/sector_naics.csv',
+colClasses = c(NAICS='character'))
+```
+
+```{r}
+# console
+View(sector)
+```
+
+Probably the primary challenge in combining secondary datasets for synthesis research is dealing with their different sampling frames. A very common issue is that data are collected at different “scales”, with one dataset being at higher spatial or temporal resolution than another. The differences between the CBP and ACS categories of industry present a similar problem, and require the same solution of re-aggregating data at the “lower resolution”.
+
+## Many-to-One
+A dplyr join function can be used to “join” the cbp and sector data frames.
+
+Join commands combine two data frames based on columns in the data frame specified by the by = argument. If no columns are given, the default is to combine using all columns with the same names. In our example, cbp and sector will join based on the NAICS column in each of the data frames.
+
+There are multiple types of join commands which differ in how they handle data that is missing in one of the data frames. To combine cbp and sector we will use inner_join which will only include rows that have the same NAICS code in both cbp and sector. Information on the other types of join commands can be found in the dplyr [join documentation] (https://dplyr.tidyverse.org/reference/join.html).
+
+```{r}
+# Joining, by = "NAICS"
+cbp <- cbp %>%
+  inner_join(sector)
+```
+
+```{r}
+# console
+View(cbp)
+```
+
+<img>
+
+The NAICS field in the cbp table can have the same value multiple times, it is not a primary key in this table. In the sector table, the NAICS field is the primary key uniquely identifying each record. The type of relationship between these tables is therefore “many-to-one”.
+
+### Question
+Note that we lost a couple thousand rows through this join. How could cbp have fewer rows after a join on NAICS codes?
+### Answer
+The CBP data contains an NAICS code not mapped to a sector—the “error code” 99 is not present in sector. The use of “error codes” that could easilly be mistaken for data is frowned upon.
+
+## Group By
+A very common data manipulation procedure know as “split-apply-combine” tackles the problem of applying the same transformation to subsets of data while keeping the result all together.
+
+Because there were multiple NAICS codes associated with a Sector, there are now multiple rows for a single sector within a county. We need the total number of establishments in each size class aggregated within each county and industry sector.
+
+The dplyr function group_by begins the process by indicating how the data frame should be split into subsets.
+
+```{r}
+cbp_grouped <- cbp %>%
+  group_by(FIPS, Sector)
+```
+
+At this point, nothing has really changed:
+
+```{r}
+# console
+str(cbp_grouped)
+```
+
+The group_by statement does not change any values in the data frame; it only adds attributes to the the original data frame. You can add multiple variables (separated by commas) in group_by; each distinct combination of values across these columns defines a different group.
+
+## Summarize
+
+Differents operations can be used on each group. We need to sum the number of establishments in each group.
+
+Using dplyr functions, we group the data by couny and sector (group_by), select the columns for number of establishments (select) and sum the number of establishments within each group (summarize_all).
+
+```{r}
+cbp <- cbp %>%
+  group_by(FIPS, Sector) %>%
+  select(starts_with('N'), -NAICS) %>%
+  summarize_all(sum)
+```
+
+The “combine” part of “split-apply-combine” occurs automatically, when the attributes introduced by group_by are dropped. You can see attributes either by running the str() function on the data frame or by inspecting it in the RStudio Environment pane.
+
+<img>
+
+There is now a one-to-one relationship between cbp and acs, based on the combination of FIPS and Sector as the primary key for both tables.
+
+To finish creating the dataset for the analysis of interest, we now join the acs data frame. The two data frames are joined by FIPS and Sector.
+
+```{r}
+acs_cbp <- cbp %>%
+  inner_join(acs)
+```
+
+Again, however, the one-to-one relationship does not mean all rows are preserved by the join. The specific nature of the inner_join is to keep all rows, even duplicating rows if the relationship is many-to-one, where there are matching values in both tables, and discarding the rest.
+
+The acs_cbp table now includes the median_income variable from the ACS and appropriatey aggregated establishment size information (the number of establishments by employee bins) from the CBP table.
+
+```{r}
+# console
+View(acs_cbp)
+```
+
+## Additional Resources
+The following cheat sheets and tutorials repeat much of this lesson, but also provide information on additional functions for “data wrangling”.
+
+* <a href="https://github.com/rstudio/cheatsheets/raw/master/data-transformation.pdf">Data Transformation Cheat Sheet</a>
+* <a href="https://datascienceplus.com/data-manipulation-with-tidyr/">Data manipulation with tidyr</a>
+* <a href="https://www.rstudio.com/wp-content/uploads/2016/09/RegExCheatsheet.pdf">Regular Expressions Cheat Sheet</a>
+
+The first is one of several cheat sheets created by RStudio, and provides a handy, visual summary of all the key functions discussed in this lesson. It also lists some of the auxiliary functions that can be used within each type of expression, e.g. aggregation functions for summarize, “moving window” functions for mutate, etc.
+
+# Exercises
+## Exercise 1
+Now that we have a tidy form of survey, convert it to a long_survey data frame using gather. The only difference between survey and long_survey should be an additional row for zero income.
+
+```{r}
+long_survey <- pivot_longer(tidy_survey,  
+                            cols=c(age, income), 
+                            values_to = 'val', 
+                            names_to = 'attr', 
+                          )
+```
+
+## Exercise 2
+Use filter and select to return just the annual payroll data for the top level construction sector (“23—-“), using data from CBP. Annual payroll information are in columns AP and AP_NF.
+```{r}
+cbp_23 <- fread('../../data/cbp15co.csv', na.strings = '') %>%
+  filter(NAICS == '23----') %>%
+  select(starts_with('FIPS'), starts_with('AP'))
+```
+
+## Exercise 3
+Write code to create a data frame giving, for each state, the number of counties in the CBP survey with establishements in mining or oil and gas extraction (‘21—-‘) along with their total employment (“EMP”).
+```{r}
+cbp_21 <- fread('../../data/cbp15co.csv', na.strings = '') %>%
+  filter(NAICS == '21----') %>%
+  group_by(FIPSTATE) %>%
+  summarize(EMP = sum(EMP), counties = n())
+```
+
+## Exercise 4
+A “pivot table” is a transformation of tidy data into a wide summary table. First, data are summarized by two grouping factors, then one of these is “pivoted” into columns. Using only data with a 2-digit NAICS code, chain a split-apply-combine procedure into a “wide” table to get the total number of employees (“EMP”) in each state (as rows) by NAICS code (as columns).
+
+```{r}
+pivot <- fread('../../data/cbp15co.csv', na.strings = '') %>%
+  filter(str_detect(NAICS, '[0-9]{2}----')) %>%
+  group_by(FIPSTATE, NAICS) %>%
+  summarize(EMP = sum(EMP)) %>%
+  pivot_wider(names_from = NAICS, values_from = EMP)
+
+```
+
+
+If you need to catch-up before a section of code will work, just squish it's 🍅 to copy code above it into your clipboard. Then paste into your interpreter's console, run, and you'll be ready to start in on that section. Code copied by both 🍅 and 📋 will also appear below, where you can edit first, and then copy, paste, and run again.

@@ -1,0 +1,375 @@
+---
+title: "pq_label_review"
+output: html_notebook
+---
+
+# STEP 3 - Review results from DTM_inferLDATopics_LabelCorpus
+
+This notebook:
+1. Reads in labeled outputs from 02_pq_model.Rmd ("02_pq_labels.csv")
+2. Joins "02_pq_labels.csv" with "01_pq_metaclean.csv"
+3. Subsets dataset based on labels and percent probabilities
+4. Writes subsets to CSVs
+
+
+# TASKS
+1. 
+
+
+
+# Concept Paper 
+## problems and benefits of each approach to narratives
+## what are good methods to analyze narratives?
+
+# Case Study
+## that previous study said these are good strategies
+* We have all of these different ways we can find various stories - how do they connect?
+* i.e., the machine learning story vs. the nvivo coding story
+* vs. the deep learning story 
+
+# Stop words + n-grams -- do they need to be changed; what words?
+* Stop word list c("Maine")
+
+# Machine learning (sampling strategy)
+* summarizing our dataset + subsets
+* we cant read it all but we wanted a representative sample of our corpus for "close-reading"
+
+# Deep learning (post nvivo)
+* scalability of our method - we're not just doing lip service
+
+
+
+```{r, echo=FALSE, results="hide", messages=FALSE}
+# Load and Install Libraries
+source("SEN_functions.R")
+
+## Check libraries & install
+LibraryList<-c("stringr","data.table","dplyr","tidyr","magrittr","NLP","tidytext","tm","ggplot2",
+               "scales", "ggwordcloud","textmineR","digest", "broom", "stringi")
+install_or_load_pack(LibraryList)
+
+
+outputFolder = "Data/02_Working/"
+outputImgFolder = "Images/"
+rFileNum = "03"
+rFileModelNum = "02"
+overwrite = FALSE
+
+
+outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_review"))
+if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
+
+```
+
+```{r}
+#load data
+pq_metaclean <- data.table::fread('Data/02_Working/01_pq_metaclean.csv')
+# read in columns as characters so that doc id does not read in as numeric
+pq_labels <- data.table::fread(paste0('Data/02_Working/',rFileModelNum,'_pq_labels.csv'), colClasses = 'character')
+
+# Head displays the first 6 rows of the data.table
+#head(pq_metaclean)
+#head(pq_labels)
+
+```
+
+```{r}
+# displays column names
+print("pq_metaclean columns:")
+names(pq_metaclean)
+print("")
+print("pq_labels columns:")
+names(pq_labels)
+```
+# join cleaned dataset with labels
+```{r}
+# join tables
+# left_join because pq_metaclean was subset based on topic 2 when the model was re-ran in "04_pq_model.Rmd"
+pq_metajoin <- pq_labels %>% 
+  left_join(pq_metaclean, by = c("document" = "ProQuest document ID"))
+
+pq_metajoin <- pq_metajoin %>%
+  rename(`ProQuest document ID` = document)
+
+head(pq_metajoin)
+
+pq_empty<-pq_metajoin[pq_metajoin$topic == "" | is.na(pq_metajoin$topic),]
+nrow(pq_empty)
+
+```
+
+
+# exploratory data analysis of topics generated
+Do we want to keep both topics, or drop one of the topics and dig deeper into the other topic?
+
+# number of topics by publication title
+```{r, messages=FALSE}
+plotTitle = "Count of Articles by Topic and Publication Title"
+
+# count by pub title and topic
+count_topic_pubtitle <-pq_metajoin %>%
+  group_by(`Publication title`,topic) %>% 
+  summarise(n= n()) %>%
+  arrange(as.numeric(topic),as.numeric(n))
+
+count_topic_pubtitle
+
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("count_topic_pubtitle.png"))
+png(outputPNGFileName,height=6,width=12, units='in', res=300)
+ggplot(count_topic_pubtitle, aes(x = as.factor(as.numeric(topic)), y = n, fill = `Publication title`, label = n )) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  ggtitle(plotTitle) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Probability Range") +
+  ylab("Article Count") +
+  labs(fill = "Topic")
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+
+knitr::include_graphics(paste0("Images/",rFileNum,"_pq_review/count_topic_pubtitle.png"))
+```
+
+# Count articles by topic and year
+Important to consider the total articles/year in addition to the raw count of articles per topic.
+Peaks in articles may simply be due to an overall increase of articles for a particular year.
+```{r, messages=FALSE}
+# article count per year and topic
+count_topic_year <-pq_metajoin %>%
+  group_by(`Publication year`,topic) %>% 
+  summarise(n= n()) %>%
+  arrange(as.numeric(topic),as.numeric(`Publication year`))
+
+count_topic_year
+
+# article count per year
+count_year <-pq_metajoin %>%
+  group_by(`Publication year`) %>% 
+  summarise(perYear= n()) %>%
+  arrange(as.numeric(`Publication year`))
+
+count_topic_year<-count_topic_year %>%
+  left_join(count_year, by = "Publication year")
+
+count_topic_year<-count_topic_year %>%
+  mutate(ratio = round(n/perYear,2))
+
+plotTitle = "Count of Articles by Topic and Year"
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("count_topic_year.png"))
+png(outputPNGFileName,height=5,width=15, units='in', res=300)
+ggplot(count_topic_year, aes(x = `Publication year`, colour = as.factor(as.numeric(topic)))) +
+  geom_line(aes(y = n)) +
+  scale_x_continuous(breaks=seq(min(na.omit(count_topic_year$`Publication year`)), max(na.omit(count_topic_year$`Publication year`)),1)) +
+  theme(axis.text.x = element_text(angle = 90),
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(vars(as.numeric(topic))) +
+  ggtitle(plotTitle) +
+  xlab("Publication Year") +
+  ylab("Article Count") +
+  guides(colour=FALSE) 
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+
+plotTitle = "Count of Articles by Topic and Year with Year Total"
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("count_topic_year_tot.png"))
+png(outputPNGFileName,height=5,width=15, units='in', res=300)
+ggplot(count_topic_year, aes(x = `Publication year`, colour = as.factor(as.numeric(topic)))) +
+  geom_line(aes(y = n)) +
+  geom_line(linetype = "dashed", color="black", aes(y = perYear)) +
+  scale_x_continuous(breaks=seq(min(na.omit(count_topic_year$`Publication year`)), max(na.omit(count_topic_year$`Publication year`)),1)) +
+  theme(axis.text.x = element_text(angle = 90),
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(vars(as.numeric(topic))) +
+  ggtitle(plotTitle) +
+  xlab("Publication Year") +
+  ylab("Article Count") +
+  guides(colour=FALSE) 
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+
+plotTitle = "Ratio of Articles by Topic and Year"
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("ratio_topic_year.png"))
+png(outputPNGFileName,height=5,width=15, units='in', res=300)
+ggplot(count_topic_year, aes(x = `Publication year`, colour = as.factor(as.numeric(topic)))) +
+  geom_line(aes(y = ratio)) +
+  scale_x_continuous(breaks=seq(min(na.omit(count_topic_year$`Publication year`)), max(na.omit(count_topic_year$`Publication year`)),1)) +
+  theme(axis.text.x = element_text(angle = 90),
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(vars(as.numeric(topic))) +
+  ggtitle(plotTitle) +
+  xlab("Publication Year") +
+  ylab("(Article Count)/(Article Total)") +
+  guides(colour=FALSE) 
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+
+knitr::include_graphics(paste0("Images/",rFileNum,"_pq_review/count_topic_year.png"))
+knitr::include_graphics(paste0("Images/",rFileNum,"_pq_review/count_topic_year_tot.png"))
+knitr::include_graphics(paste0("Images/",rFileNum,"_pq_review/ratio_topic_year.png"))
+```
+
+# Coherence score by topic
+```{r, out.width="50%", fig.pos="h"}
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/coherence_score_topic.png"))
+```
+
+# Wordclouds
+```{r, out.width="50%", fig.pos="h"}
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/1_lda_topic_wc.png"))
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/2_lda_topic_wc.png"))
+```
+
+# Count of Article by Topic
+```{r, out.width="50%", fig.pos="h"}
+# bar chart
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/topic_count_bar.png"))
+
+# pie chart
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/topic_count_pie.png"))
+```
+
+
+
+# Count of Probabilities by Percentage
+```{r, out.width="50%", fig.pos="h"}
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/prob_count.png"))
+```
+# Count of Topic Probabilities by Percentage
+```{r, out.width="50%", fig.pos="h"}
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/prob_topic_count.png"))
+```
+# Subset topic 1
+```{r, out.width="50%", fig.pos="h"}
+# subset corpus to unique identifier & full text of article
+# investigate topic 1
+# subset corpus to unique identifier & full text of article
+# investigate topic 1
+
+outputFile_1t <- "pq_topic1"
+minPerc <- 0
+maxPerc <- 1
+theTopic <- "1"
+
+## e.g, minPerc = 0 & maxPerc = 0.4 is zero to 0.3999999999 ...
+pq_topic1_subset<-topic_subset_csv(outputFolder, rFileNum, outputFile_1t, pq_metajoin , minPerc, maxPerc, theTopic, overwrite)
+
+head(pq_topic1_subset);nrow(pq_topic1_subset)
+
+# wordcloud from model output
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/1_lda_topic_wc.png"))
+```
+
+# Subset topic 2
+```{r, out.width="50%", fig.pos="h"}
+# subset corpus to unique identifier & full text of article
+# investigate topic 2
+
+outputFile_2t <- "pq_topic2"
+minPerc <- 0
+maxPerc <- 1
+theTopic <- "2"
+
+## e.g, minPerc = 0 & maxPerc = 0.4 is zero to 0.3999999999 ...
+pq_topic2_subset<-topic_subset_csv(outputFolder, rFileNum, outputFile_2t, pq_metajoin , minPerc, maxPerc, theTopic, overwrite)
+
+head(pq_topic2_subset);nrow(pq_topic2_subset)
+
+# wordcloud from model output
+knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/2_lda_topic_wc.png"))
+```
+# Subset topic 2, 90%
+```{r}
+# subset corpus to unique identifier & full text of article
+# investigate topic 2, 90% ; 1304 articles
+outputFile_2t90perc <- "pq_topic2_90perc"
+minPerc <- 0.9
+maxPerc <- 1
+theTopic <- "2"
+
+## e.g, minPerc = 0 & maxPerc = 0.4 is zero to 0.3999999999 ...
+pq_topic2_90perc<-topic_subset_csv(outputFolder, rFileNum, outputFile_2t90perc, pq_metajoin , minPerc, maxPerc, theTopic, overwrite)
+
+head(pq_topic2_90perc);nrow(pq_topic2_90perc)
+```
+
+# Subset 50-60%-ers
+```{r}
+# subset corpus to unique identifier & full text of article
+# investigate all topics, 50-60%
+outputFile_56perc <- "pq_56perc"
+minPerc <- 0.5
+maxPerc <- 0.6
+theTopic <- "all"
+
+## e.g, minPerc = 0 & maxPerc = 0.4 is zero to 0.3999999999 ...
+pq_56perc<-topic_subset_csv(outputFolder, rFileNum, outputFile_56perc, pq_metajoin , minPerc, maxPerc, theTopic, overwrite)
+
+head(pq_56perc);nrow(pq_56perc)
+```
+
+
+
+
+# explore term frequencies by year - how do words in our corpus change over time?
+Referenced walk-through from: https://cran.r-project.org/web/packages/tidytext/vignettes/tidying_casting.html
+```{r}
+# subset corpus to unique identifier & year
+pq_time <- pq_metaclean %>% 
+  select(`ProQuest document ID`, `Publication year`)
+
+# tokens generated from 02_pq_model.Rmd
+outputTokenFile = paste0(rFileModelNum,"_tokens.RData")
+tokensFileName = file.path(outputFolder,outputTokenFile)
+
+load(file=tokensFileName)
+
+tokens <- tokens %>% 
+  full_join(pq_time, by = c("ProQuest document ID" = "ProQuest document ID")) %>%
+  rename(Year = `Publication year`) %>%
+  rename(pq_id = `ProQuest document ID`) %>%
+  mutate_at(vars(Year), funs(as.integer))
+rm(pq_time)
+
+outputFreqsFile = paste0(rFileNum,"_tokens_freq")
+tokens_freq<-create_ifnot_tokens_freq(outputFolder, outputFreqsFile, tokens, overwrite)
+
+outputFreqModelFile = paste0(rFileNum,"_freq_models")
+freq_models <- create_ifnot_freqmodels(outputFolder, outputFreqModelFile, tokens_freq, overwrite)
+```
+
+# model results
+```{r}
+freq_models %>%
+  filter(term == "Year") %>%
+  arrange(desc(abs(estimate)))
+```
+
+# Models displayed as a volcano plot, which compares the effect size with the significance
+```{r}
+freq_models %>%
+  mutate(adjusted.p.value = p.adjust(p.value)) %>%
+  ggplot(aes(estimate, adjusted.p.value)) +
+  geom_point() +
+  scale_y_log10() +
+  geom_text(aes(label = word), vjust = 1, hjust = 1,
+            check_overlap = TRUE) +
+  xlab("Estimated change over time") +
+  ylab("Adjusted p-value")
+```
+
+# Top 6 terms that have changed in frequency over time
+```{r}
+freq_models %>%
+  top_n(6, abs(estimate)) %>%
+  inner_join(tokens_freq) %>%
+  ggplot(aes(Year, percent)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~ word) +
+  scale_y_continuous(labels = percent_format()) +
+  ylab("Frequency of word in speech")
+```

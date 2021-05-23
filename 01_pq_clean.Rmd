@@ -1,0 +1,292 @@
+---
+title: "pq_clean"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+# STEP 1 - Clean and identify mistakes from pq_parser script
+
+This notebook:
+1. Reads in the output from pq_parser.ipynb ("pq_metadata.csv")
+2. Cleans the output from pq_parser.ipynb
+3. Writes cleaned corpus ("01_pq_metaclean.csv")
+
+```{r, echo=FALSE, results="hide", messages=FALSE}
+# Load and Install Libraries
+source("SEN_functions.R")
+## Check libraries & install
+LibraryList<-c("stringr","data.table","dplyr","tidyr","magrittr","NLP","tidytext","tm","ggplot2",
+               "scales", "ggwordcloud","textmineR","digest", "rvest","textclean","future.apply")
+install_or_load_pack(LibraryList)
+rFileNum = "01"
+overwrite = TRUE
+```
+
+# load in data
+```{r}
+#load data
+pq_metadata <- data.table::fread('Data/02_Working/pq_metadata.csv')
+
+# displays column names & number of rows - 6589
+names(pq_metadata);nrow(pq_metadata)
+
+# Head displays the first 6 rows of the data.table
+head(pq_metadata)
+```
+
+# check empty full texts
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 51 rows blank/NA Full text
+pq_empty<-pq_metadata[pq_metadata$`Full text` == "" | is.na(pq_metadata$`Full text`),]
+nrow(pq_empty)
+```
+
+# remove empty full texts & missing IDs
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 50 blank/NA pub titles
+#pq_metaclean<-pq_metadata[!(pq_metadata$`Full text` == "" | is.na(pq_metadata$`Full text`)),]
+
+pq_metaclean <- pq_metadata %>% 
+  drop_na(`Full text`) %>%
+  drop_na(`ProQuest document ID`) %>%
+  filter(`Full text` != "") %>%
+  filter(`ProQuest document ID` != "")
+
+numReduced<- nrow(pq_metadata)-nrow(pq_metaclean)
+print(paste("NA or blank Full Text rows removed:",numReduced))
+```
+
+# check unique publication titles
+```{r}
+# what are the unique publication titles 
+unique(pq_metaclean$`Publication title`)
+```
+
+# check empty publication titles
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 15 blank/NA pub titles (there were 50 before Full text clean)
+pq_empty<-pq_metaclean[pq_metaclean$`Publication title` == "" | is.na(pq_metaclean$`Publication title`),]
+nrow(pq_empty)
+# 0 of these blank/NA pub titles have blank/NA 'full texts' as well (there were 37 before full text clean)
+nrow(pq_empty[pq_empty$`Full text` == "" | is.na(pq_empty$`Full text`),])
+```
+
+# if publication title is blank or NA, replace it with the publication title in publication info
+```{r}
+pq_metaclean <- pq_metaclean %>% 
+  mutate(`Publication title` = ifelse(`Publication title` == "" | is.na(`Publication title`), 
+                                      unlist(strsplit(`Publication info`, split="\\[|:"))[1], `Publication title`))
+
+#check to see if pub title substitution worked 
+unique(pq_metaclean$`Publication title`)
+```
+
+# fix duplicate publication titles
+```{r}
+# Substitute 
+# "Bangor Daily News; Bang or, Me."  
+# "Bangor Daily News; Ba ngor, Me." 
+# "Bangor Dail y News; Bangor, Me."  
+# with "Bangor Daily News; Bangor, Me."  
+
+# "Morning Sentinel; Wate rville, Me." 
+# "Central Maine Morning Sentinel; Waterville, Me."
+#  with "Morning Sentinel; Waterville, Me."       
+
+# "Kennebec Journal; Augusta, Me." 
+# "Kennebec Journal; Augusta, Me ."
+
+pq_metaclean <- pq_metaclean %>% 
+  mutate(`Publication title` = recode(`Publication title`,
+                                      'Bangor Daily News; Bang or, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Bangor Daily News; Ba ngor, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Bangor Dail y News; Bangor, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Bangor Daily News; Bango r, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Bang or Daily News; Bangor, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      "Bangor Daily News ; Bangor, Me. " = 'Bangor Daily News; Bangor, Me.',
+                                      'Morning Sentinel; Wate rville, Me.' = 'Morning Sentinel; Waterville, Me.',
+                                      'Central Maine Morning Sentinel; Waterville, Me.' = 'Morning Sentinel; Waterville, Me.',
+                                      'Kennebec Journal; Augusta, Me .' = 'Kennebec Journal; Augusta, Me.',
+                                      'Portland Press Herald; Port land, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Portland Pr ess Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Portland Pre ss Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Portl and Press Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Portland Press Herald Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Portlan d Press Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Port land Press Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Portlan d Press Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.',
+                                      'Port land Press Herald; Portland, Me.' = 'Portland Press Herald; Portland, Me.'))
+
+#check to see if pub title substitution worked --- yes, no weird repeats
+unique(pq_metaclean$`Publication title`)
+```
+
+#check unique Publication years
+```{r}
+unique(pq_metaclean$'Publication year')
+```
+
+#clean publication years
+```{r}
+pq_metaclean <- pq_metaclean %>%
+  mutate(`Publication year` = recode(`Publication year`,
+                                     '200 3' = '2003',
+                                     '201 8' = '2018'))
+
+#check to see if pub title substitution worked --- yes, no weird repeats
+unique(pq_metaclean$`Publication year`)
+```
+
+# check empty publication years
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 3 blank/NA pub years
+pq_empty<-pq_metaclean[pq_metaclean$`Publication year` == "" | is.na(pq_metaclean$`Publication year`),]
+nrow(pq_empty)
+# 0 of these blank/NA pub years have blank/NA 'full texts' as well
+nrow(pq_empty[pq_empty$`Full text` == "" | is.na(pq_empty$`Full text`),])
+```
+
+# if publication year is blank or NA, replace it with the year in publication info
+```{r}
+#pq_metaclean <- pq_metaclean %>%
+#  mutate(`Publication year` = ifelse(`Publication year` == "" | is.na(`Publication year`), str_sub(`Publication date`,-4,-1), `Publication year`))
+
+# Sub from last 4 digits in publication date
+# sub from matched condition of being 4 digits in publication info
+pq_metaclean <- pq_metaclean %>%
+  mutate(`Publication year` = ifelse(`Publication year` == "" | is.na(`Publication year`), 
+                                     sub('.*(\\d{4}).*', '\\1', `Publication info`), `Publication year`))
+#check to see if pub title substitution worked --- yes, no weird repeats
+unique(pq_metaclean$`Publication year`)
+```
+
+# re-check empty publication years (should be 0 now)
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 3 blank/NA pub years
+pq_empty<-pq_metaclean[pq_metaclean$`Publication year` == "" | is.na(pq_metaclean$`Publication year`),]
+nrow(pq_empty)
+# 0 of these blank/NA pub years have blank/NA 'full texts' as well
+nrow(pq_empty[pq_empty$`Full text` == "" | is.na(pq_empty$`Full text`),])
+```
+
+# check empty publication dates
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 3 blank/NA pub years
+pq_empty<-pq_metaclean[pq_metaclean$`Publication date` == "" | is.na(pq_metaclean$`Publication date`),]
+nrow(pq_empty)
+# 0 of these blank/NA pub years have blank/NA 'full texts' as well
+nrow(pq_empty[pq_empty$`Full text` == "" | is.na(pq_empty$`Full text`),])
+```
+
+```{r}
+# if publication date is empty or NA, fill with date from publication info
+pq_metaclean <- pq_metaclean %>% 
+  mutate(`Publication date` = ifelse(`Publication date` == "" | is.na(`Publication date`), 
+                                     unlist(strsplit(`Publication info`, split="\\]|:"))[2], `Publication date`))
+```
+
+# re-check empty publication dates (should be 0 now)
+```{r}
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+# 3 blank/NA pub years
+pq_empty<-pq_metaclean[pq_metaclean$`Publication date` == "" | is.na(pq_metaclean$`Publication date`),]
+nrow(pq_empty)
+# 0 of these blank/NA pub years have blank/NA 'full texts' as well
+nrow(pq_empty[pq_empty$`Full text` == "" | is.na(pq_empty$`Full text`),])
+```
+
+# more cleanings
+```{r}
+PubTitles<-"Bangor Daily News|Kennebec Journal|Maine Times|Morning Sentinel|Portland Press Herald|Sun Journal" 
+TxtFormatting<-"\a|\b|\f|\n|\r|\t|\v|\\[|\\]"
+
+pq_metaclean<- pq_metaclean %>%
+  mutate(`Full text` = textclean::replace_html(`Full text`, symbol=TRUE)) %>% # replace html, url, symbol, white from textclean
+  mutate(`Full text` = textclean::replace_url(`Full text`, replacement = '<<URL>>')) %>%
+  mutate(`Full text` = gsub(PubTitles, " ", `Full text`)) %>% # remove publication titles
+  mutate(`Full text` = gsub(TxtFormatting, " ", `Full text`)) %>% # remove text formatting
+  mutate(`Full text` = gsub("\"", " ", `Full text`)) %>% # remove double quotes ""
+  mutate(`Full text` = stringi::stri_trans_general(str = `Full text`, id = "Latin-ASCII")) %>% # remove accented letters
+  mutate(`Full text` = custom_replace_symbol(`Full text`)) %>% # replace "&" with "and" and "%" with "percent"
+  mutate(`Full text` = textclean::replace_white(`Full text`)) # remove extra white space 
+```
+
+# If duplicate full text exists, select first in series and dump the rest? -- yes, since 
+# initial cleaning is to produce representative categories
+
+These document IDs have random spaces in the publication date; i.e., May 01, 20 14
+DID1<-"1540791926"
+DID2<-"2257133415"
+
+pq_metadata[pq_metadata$`ProQuest document ID`==DID1,]
+
+```{r}
+#
+head(pq_metaclean)
+sort(pq_metaclean$`Publication date`)
+numPreDeDup<-nrow(pq_metaclean) #6461
+print(paste("Number of articles pre-dedup:",numPreDeDup))
+numDup<-sum(table(pq_metaclean$`Full text`)-1) # Total number of duplicate full texts: 184
+print(paste("Number of duplicates:",numDup))
+
+# duplicate flag is not sufficient to remove all duplicates - 53 rows
+pq_metadata %>%
+  select(`Full text`, `Publication info`, `Publication date`) %>%
+  mutate(`Publication date` = as.Date(`Publication date`, format = "%b %d, %Y")) %>%
+  arrange(`Publication date`) %>%
+  filter(grepl('Duplicate',`Publication info`))
+
+pq_metaclean <- pq_metaclean %>%
+  filter(!grepl('Duplicate',`Publication info`)) %>%
+  group_by(`Full text`) %>% 
+  mutate(`Publication date` = as.Date(`Publication date`, format = "%b %d, %Y")) %>%
+  arrange(`Publication date`) %>%
+  slice(1L)
+
+pq_metaclean %>%
+  select(`Publication info`,`Publication date`)
+
+numPostDeDup<-nrow(pq_metaclean)
+print(paste("Number of articles post-dedup:",numPostDeDup)) # 6277 to 6239
+numRemoved <- (numPreDeDup - numPostDeDup)
+print(paste("Number of duplicates removed:",numRemoved)) # 184 to 222
+```
+
+# Save to pq_metaclean.csv if it doesn't already exist or overwrite = TRUE
+```{r}
+# Save cleaned corpus to new file 
+outputFileNameClean <- paste0(rFileNum,"_pq_metaclean")
+outputFolder = "Data/02_Working/"
+outputFileClean = paste(outputFolder,outputFileNameClean,".csv",sep="")
+
+if (!file.exists(outputFileClean) | overwrite) {
+  write.csv(pq_metaclean, outputFileClean, row.names=FALSE)
+}
+```

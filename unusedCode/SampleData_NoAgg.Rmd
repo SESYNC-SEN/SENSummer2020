@@ -1,0 +1,392 @@
+---
+title: "SampleData_NoAgg"
+output: html_notebook
+---
+
+# To Do:
+* Explore Maine Times (20 articles)
+* Finish downloading corpus
+* add n-grams (n-grams and stopwords are interchangable because adding stopwords affects n-grams)
+* fix stopwords
+* re-run all of the code
+* Deeper dive on distance matrix (dendrogram - explore values of tree) -> publication effect
+* infer number of topics by coherence score
+    * https://towardsdatascience.com/beginners-guide-to-lda-topic-modelling-with-r-e57a5a8e7a25
+    
+----
+* predict category (topics) based on LDA model
+* sample corpus articles based on categories (topics)
+* start NVIVO coding (NVIVO - BIG - WHAT ARE NARRATIVES!?!?!? HOW DO THEY BREAK DOWN!?!?!?)
+* (might not work) deep learning on NVIVO coded labels (SpaCy - location & SEN) -> predict back to entire corpus -> construct timeline
+
+```{r, echo=FALSE, results="hide", messages=FALSE}
+
+source("SEN_functions.R")
+
+## Check libraries & install
+LibraryList<-c("stringr","data.table","dplyr","tidyr","magrittr","NLP","tidytext","tm",
+               "topicmodels","ggplot2","scales", "ggwordcloud")
+install_or_load_pack(LibraryList)
+
+
+# https://rstudio-pubs-static.s3.amazonaws.com/266040_d2920f956b9d4bd296e6464a5ccc92a1.html
+LibraryList<-c("fpc","wordcloud","cluster","stringi","proxy","RTextTools")
+install_or_load_pack(LibraryList)
+
+# to save wordclouds
+LibraryList<-c("webshot")
+install_or_load_pack(LibraryList)
+
+# https://cran.r-project.org/web/packages/tidytext/vignettes/tidying_casting.html
+#LibraryList<-c("methods","quanteda","broom")
+#install_or_load_pack(LibraryList)
+
+# grid plots
+#LibraryList<-c("gtable","grid","gridExtra")
+#install_or_load_pack(LibraryList)
+
+
+
+```
+
+```{r}
+#load data
+pq_metadata <- data.table::fread('Data/02_Working/pq_metadata.csv')
+
+# displays column names
+names(pq_metadata)
+
+# Head displays the first 6 rows of the data.table
+head(pq_metadata)
+
+```
+
+```{r}
+# what are the unique publication titles 
+unique(pq_metadata$`Publication title`)
+
+```
+
+```{r}
+
+# How do you want to treat NA?
+# subset the data by the NAs, explore them & their origin
+# can we programmatically fix it, or do we have to do it manually?
+
+#sum(is.na(pq_metadata$`Publication title`)) ### there are 45 rows that have NAs
+
+#pqNA<-pq_metadata[is.na(pq_metadata$`Publication title`),]
+##lots of info missing from other fields in this group... remove? 
+
+#sum(is.na(pqNA$`Full text`)) ## there are 35 rows without text among those without titles
+
+
+# 50 blank pub titles
+nrow(pq_metadata[pq_metadata$`Publication title` == "",])
+pqblnk<-pq_metadata[pq_metadata$`Publication title` == "",]
+# 37 of these blank pub titles have blank 'full texts' as well
+nrow(pqblnk[pqblnk$`Full text` == "",])
+
+
+```
+
+
+```{r}
+# Substitute 
+# "Bangor Daily News; Bang or, Me."  
+# "Bangor Daily News; Ba ngor, Me." 
+# "Bangor Dail y News; Bangor, Me."  
+# with "Bangor Daily News; Bangor, Me."  
+
+# "Morning Sentinel; Wate rville, Me." 
+# "Central Maine Morning Sentinel; Waterville, Me."
+#  with "Morning Sentinel; Waterville, Me."       
+
+# "Kennebec Journal; Augusta, Me." 
+# "Kennebec Journal; Augusta, Me ."
+
+#pq_metaSub<-pq_metadata #create new data frame to avoid saving over
+
+pq_metaSub <- pq_metadata %>% 
+  drop_na(`Publication title`) %>%
+  filter(`Publication title` != "") %>%
+  mutate(`Publication title` = recode(`Publication title`,
+                                      'Bangor Daily News; Bang or, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Bangor Daily News; Ba ngor, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Bangor Dail y News; Bangor, Me.' = 'Bangor Daily News; Bangor, Me.',
+                                      'Morning Sentinel; Wate rville, Me.' = 'Morning Sentinel; Waterville, Me.',
+                                      'Central Maine Morning Sentinel; Waterville, Me.' = 'Morning Sentinel; Waterville, Me.',
+                                      'Kennebec Journal; Augusta, Me .' = 'Kennebec Journal; Augusta, Me.',
+                                      'Portland Press Herald; Port land, Me.' = 'Portland Press Herald; Portland, Me.'))
+
+#check to see if pub title substitution worked --- yes, no weird repeats
+unique(pq_metaSub$`Publication title`)
+
+```
+
+
+
+
+```{r}
+
+fulltext_df<-pq_metaSub %>%
+  dplyr::group_by(`Publication title`) %>%
+  dplyr::summarise(agg_full_text = toString(`Full text`), .groups = 'keep')
+```
+
+```{r}
+
+#fulltext_qcorp <- quanteda::corpus(fulltext_df, text_field = "agg_full_text") # you have to tell it the name of the text field
+#fulltext_dfm <- quanteda::dfm(fulltext_qcorp, verbose = FALSE)
+
+#fulltext_tidy <- tidy(fulltext_dfm)
+# lots of options to dfm read the help pages
+#fulltext_df
+
+```
+
+
+## n-grams here
+
+```{r}
+# prints stopwords for english
+#tm::stopwords(kind="SMART")
+```
+
+# Setup control_list_ngram
+Reference: http://rstudio-pubs-static.s3.amazonaws.com/96241_febf0e86e4224b958b13b815b8e939e3.html
+tm list of stopwords: https://rdrr.io/rforge/tm/man/stopwords.html
+
+```{r}
+## tokenizers for ngrams - select the number of ngrams to use in control_list_ngram
+## uncomment ONE of the the ngramTokenizers to use in control_list_ngram
+#ngramTokenizer <- function(x) unlist(lapply(NLP::ngrams(words(x), 1L), paste, collapse=" "), use.names=FALSE); ngrm_num <- "1"
+ngramTokenizer <- function(x) unlist(lapply(NLP::ngrams(words(x), 1:2), paste, collapse=" "), use.names=FALSE); ngrm_num <- "2"
+#ngramTokenizer <- function(x) unlist(lapply(NLP::ngrams(words(x), 3L), paste, collapse=" "), use.names=FALSE); ngrm_num <- "3"
+#ngramTokenizer <- function(x) unlist(lapply(NLP::ngrams(words(x), 4L), paste, collapse=" "), use.names=FALSE); ngrm_num <- "4"
+#ngramTokenizer <- function(x) unlist(lapply(NLP::ngrams(words(x), 5L), paste, collapse=" "), use.names=FALSE); ngrm_num <- "5"
+#ngramTokenizer <- function(x) unlist(lapply(NLP::ngrams(words(x), 8L), paste, collapse=" "), use.names=FALSE); ngrm_num <- "8"
+
+## create bounds for control_list_ngram
+ndocs <- nrow(fulltext_df)
+## ignore extremely rare words
+minTermFreq <- minTermFreq <- ndocs * 0.01
+## ignore overly common words i.e. terms that appear in more than 50% of the documents
+maxTermFreq <- ndocs * .5
+
+## stemming: dropping -ing -s -es
+## lemmatization -- where is this?
+## tokenize: using multiple combinations of words
+## bounds: drop words that do not occur very often or occur too often among corpus
+
+control_list_ngram = list(removePunctuation = T,
+                          removeNumbers = T, 
+                          stopwords = c("the","and","that","for","said","main",kind="english"),
+                          tolower = T, 
+                          bounds = list(global = c(minTermFreq, maxTermFreq)),
+                          tokenize = ngramTokenizer,
+                          stemming = T,
+                          wordLengths=c(3, 15)
+                          )
+
+```
+
+# Document-Term Matrix
+
+```{r}
+# create_ifnot_dtm(outputFolderName,outputFileName, control_list_ngram,inputCorpus, overwrite=FALSE)
+# If file does not exist, create. Otherwise, load. If overwrite is true, then re-write output.
+# Input:
+# control_list_ngram - inputs for DocumentTermMatrix
+# outputFolderName - folder path, e.g., "Data/02_Working/"
+# outputFileName - file name, e.g., "dtm_NGram-0"
+# inputCorpus - text in an r corpus data structure
+# overwrite - defaults to FALSE; if true, file will overwrite
+# output: 
+# DocumentTermMatrix and R.Data output of object
+
+outputFolderName = "Data/02_Working/"
+outputFileNameDTM = paste("dtm_NGram-",ngrm_num,sep="")
+
+full_DocTermMatrix<-create_ifnot_dtm(outputFolderName,outputFileNameDTM,control_list_ngram, fulltext_df$agg_full_text,overwrite=TRUE)
+
+
+
+```
+
+```{r}
+tm::inspect(full_DocTermMatrix)
+# with ngrams sparsity == 77%; without == 67%
+```
+
+```{r}
+# https://rstudio-pubs-static.s3.amazonaws.com/132792_864e3813b0ec47cb95c7e1e2e2ad83e7.html
+#findFreqTerms(full_DocTermMatrix, 1000)
+
+# To reduce the dimension of the DTM, we can emove the less frequent terms such that the sparsity is less than 0.95
+#full_DocTermMatrix = removeSparseTerms(full_DocTermMatrix, 0.99)
+#full_DocTermMatrix
+
+
+# https://cran.r-project.org/web/packages/tidytext/vignettes/tidying_casting.html
+# this link creates those freq by yeart charts
+
+```
+
+
+
+```{r}
+# tidy_words(DTM, tidyTrim=FALSE)
+# input:
+# DocumentTermMatrix output
+# tidyTrim = TRUE will remove long words (>16) and short words (>1)
+# output: 
+# DTM_terms, DTM_summarise, & DTM_trim
+
+full_DTM<-tidy_words(full_DocTermMatrix, tidyTrim=TRUE)
+
+```
+# to save DTM as hard-copy csv
+```{r}
+write.csv((as.matrix(full_DocTermMatrix)), paste(outputFolderName,outputFileNameDTM,".csv",sep=""))
+```
+
+
+
+```{r}
+
+plotTitle = "Full Corpus"
+
+#png_fn = paste0("Images/WordLengthFreq_Hist-NGram-",ngrm_num,".png",collapse=NULL)
+
+# save the image in png format
+#png(png_fn, width=12, height=8, units="in", res=300)
+ggplot(full_DTM[['DTM_summarise']], aes(x = nchar)) +
+  ggtitle(plotTitle) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_histogram(binwidth = 1)
+#dev.off()
+
+# with ngrams the histogram is very normal looking; without it is skewed to the right
+```
+
+
+
+# Below is the list of most important terms for the Finding Dory movie as determined using tf-idf weighting.
+
+
+```{r}
+# [1] "Portland Press Herald; Portland, Me."  [2] "Sun Journal; Lewiston, Me."           
+# [3] "Kennebec Journal; Augusta, Me."        [4] "Morning Sentinel; Waterville, Me."    
+# [5] "Maine Times; Portland, Me."            [6] "Bangor Daily News; Bangor, Me."  
+
+# convert to matrix format 
+full_dtm_matrix = as.matrix(full_DocTermMatrix)
+
+pub_list <- c("PPH", "SJ", "KJ", "MS", "MT", "BDN")
+
+for (i in 1:nrow(full_dtm_matrix)) {
+#  png_fn = paste0("Images/",i,"_",pub_list[i],"_wc-NGram-",ngrm_num,".png",collapse=NULL)
+
+  # save the image in png format
+#  png(png_fn, width=12, height=8, units="in", res=300)
+  wordcloud(colnames(full_dtm_matrix), full_dtm_matrix[i, ], max.words = 200, random.order=FALSE, colors=brewer.pal(8, "Dark2"))
+#  dev.off()
+
+}
+```
+
+
+
+### Calculating distance
+Next we calculate the euclidean distance between the documents. This distance is what the Clustering algorithm uses to cluster documents.
+
+First, DTM needs to be converted to a Standard R Matrix that can be consumed by dist
+
+
+```{r}
+distMatrix <- dist(full_dtm_matrix, method="euclidean")
+
+distMatrix
+```
+The R algorithm we’ll use is hclust which does agglomerative hierarchical clustering. Here’s a simplified description of how it works:
+
+Assign each document to its own (single member) cluster
+Find the pair of clusters that are closest to each other (dist) and merge them. So you now have one cluster less than before.
+Compute distances between the new cluster and each of the old clusters.
+Repeat steps 2 and 3 until you have a single cluster containing all documents.
+
+```{r}
+#png_fn = paste0("Images/dmatrix_clusterDendogram-NGram-",ngrm_num,".png",collapse=NULL)
+
+# save the image in png format
+#png(png_fn, width=12, height=8, units="in", res=300)
+groups <- hclust(distMatrix,method="ward.D")
+plot(groups, cex=0.9, hang=-1, labels=pub_list)
+rect.hclust(groups, k=5)
+#dev.off()
+
+
+```
+
+# Topic Modelling
+
+## LDA
+```{r}
+# create_ifnot_lda(outputFolderName, outputFileName, numTopics=5, inputDTM, seed=12345, overwrite=FALSE)
+  # If file does not exist, create. Otherwise, load. If overwrite is true, then re-write output.
+  # Input:
+  # outputFolderName - folder path, e.g., "Data/02_Working/"
+  # outputFileName - file name, e.g., "LDA_NGram-0"
+  # numTopics - number of LDA output topics; default is 5
+  # inputDTM - DocumentTermMatrix
+  # overwrite - defaults to FALSE; if true, file will overwrite
+  # seed - for setseed; default is 12345
+  # output: 
+  # LDA Model and R.Data output of object
+
+outputFolderName = "Data/02_Working/"
+outputFileNameLDA = paste("lda_NGram-",ngrm_num,sep="")
+numTopics <- 5
+seed <- 12345
+
+
+fit<-create_ifnot_lda(outputFolderName, outputFileNameLDA, numTopics, full_DocTermMatrix, seed=12345, overwrite=TRUE)
+    
+```
+
+
+```{r}
+terms(fit, 20)
+
+```
+
+
+```{r}
+pub_topics <- as.data.frame(
+  posterior(fit, full_DTM[['DTM_trim']])$topics)
+
+```
+
+```{r}
+# console
+head(pub_topics)
+
+```
+
+
+```{r}
+tidy_topics <- tidy(fit) %>%
+  filter(beta > 0.004)
+
+#png_fn = paste0("Images/lda_wcs-NGram-",ngrm_num,".png",collapse=NULL)
+
+# save the image in png format
+#png(png_fn, width=12, height=8, units="in", res=300)
+gplt<-ggplot(tidy_topics,
+  aes(size = beta, label = term)) +
+  geom_text_wordcloud_area(rm_outside = TRUE) +
+  facet_wrap(vars(topic))
+print(gplt)
+#dev.off()
+```
