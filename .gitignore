@@ -45,4 +45,5 @@ Data/**
 /Data/
 
 #anything else
-*.jar*/Data*
+*.jar*
+*bfg.jar
