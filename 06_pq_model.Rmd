@@ -124,7 +124,9 @@ rm(pq_metafilter)
 * tidytext::stop_words == "SMART"
 ```{r}
 # add words to stop_words to create custom_stop_words
+# stopwords to add pending feedback:
 # main, url, becaus, day, st, caus, mani, dont
+# time, town
 custom_stop_words <- bind_rows(tibble(word = c("maine","mainea","pm","am","ita", "pos","rt"),
                                       lexicon = c("custom")),
                                stop_words)
