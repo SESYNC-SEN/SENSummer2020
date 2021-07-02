@@ -81,8 +81,10 @@ nrow(pq_empty)
 # write labeled corpus to CSV
 outputFileName = "pq_topics"
 outputFile = paste(outputFolder,rFileNum,"_",outputFileName,".xlsx",sep="")
-write.xlsx(pq_metajoin, outputFile, row.names=FALSE)
-#write.htmltable(pq_metajoin,title=outputFile, outputFile, sortby="topic","val")
+if (!file.exists(outputFile) | overwrite) {
+  write.xlsx(pq_metajoin, outputFile, row.names=FALSE)
+  #write.htmltable(pq_metajoin,title=outputFile, outputFile, sortby="topic","val")
+}
 ```
 # Code now ready for SUBSETTING if you want to skip the following sections --
 
@@ -110,7 +112,7 @@ ggplot(count_topic_pubtitle, aes(x = as.factor(as.numeric(topic)), y = n, fill =
   geom_text(size = 3, position = position_stack(vjust = 0.5)) +
   ggtitle(plotTitle) +
   theme(plot.title = element_text(hjust = 0.5)) +
-  xlab("Probability Range") +
+  xlab("Topic") +
   ylab("Article Count") +
   labs(fill = "Topic")
 print(paste("Plot saved as:",outputPNGFileName))
@@ -385,6 +387,10 @@ freq_models %>%
 
 # Models displayed as a volcano plot, which compares the effect size with the significance
 ```{r}
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("word_change_over_time.png"))
+png(outputPNGFileName,height=5,width=15, units='in', res=300)
+
 freq_models %>%
   mutate(adjusted.p.value = p.adjust(p.value)) %>%
   ggplot(aes(estimate, adjusted.p.value)) +
@@ -394,10 +400,20 @@ freq_models %>%
             check_overlap = TRUE) +
   xlab("Estimated change over time") +
   ylab("Adjusted p-value")
+
+
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+
+knitr::include_graphics(paste0("Images/",rFileNum,"_pq_review/word_change_over_time.png"))
 ```
 
 # Top 6 terms that have changed in frequency over time
 ```{r}
+# save plot in png format
+outputPNGFileName <- file.path(outputPngFolder,paste0("top_word_change_over_time.png"))
+png(outputPNGFileName,height=5,width=15, units='in', res=300)
+
 freq_models %>%
   top_n(6, abs(estimate)) %>%
   inner_join(tokens_freq) %>%
@@ -407,4 +423,9 @@ freq_models %>%
   facet_wrap(~ word) +
   scale_y_continuous(labels = percent_format()) +
   ylab("Frequency of word in speech")
+
+print(paste("Plot saved as:",outputPNGFileName))
+dev.off()
+
+knitr::include_graphics(paste0("Images/",rFileNum,"_pq_review/top_word_change_over_time.png"))
 ```
