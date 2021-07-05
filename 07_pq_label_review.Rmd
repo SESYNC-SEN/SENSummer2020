@@ -353,6 +353,7 @@ max(pq_perc06_subset$val)
 
 # explore term frequencies by year - how do words in our corpus change over time?
 Referenced walk-through from: https://cran.r-project.org/web/packages/tidytext/vignettes/tidying_casting.html
+Are articles normalized based on the number of articles per year
 ```{r}
 # subset corpus to unique identifier & year
 pq_time <- pq_metaclean %>% 
