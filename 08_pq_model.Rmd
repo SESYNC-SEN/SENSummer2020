@@ -8,10 +8,11 @@ output: html_notebook
 This notebook:
 1. Reads in the cleaned corpus from 01_pq_clean.Rmd ("01_pq_metaclean.csv")
 2. Removes 'quarantined' data ()
-2. creates a Document Term Matrix 
-3. trains an LDA model
-4. Uses the LDA model to predict topic categories for each article in our corpus
-5. writes the Document Term Matrix and LDA models to r data files ("*.rda")
+3. Removes Topic 1
+4. creates a Document Term Matrix 
+5. trains an LDA model
+6. Uses the LDA model to predict topic categories for each article in our corpus
+7. writes the Document Term Matrix and LDA models to r data files ("*.rda")
 
 ## notes to coders
 * IF ADDING NEW PLOT PLEASE CREATE NEW CHUNK
@@ -31,7 +32,7 @@ install_or_load_pack(LibraryList)
 
 outputFolder = "Data/02_Working/"
 outputImgFolder = "Images/"
-rFileNum = "06"
+rFileNum = "08"
 
 outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_model"))
 if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
@@ -41,79 +42,29 @@ overwrite = FALSE
 ```
 
 
-# Load cleaned corpus output from 01_pq_clean.Rmd and remove quarantine
+# Load cleaned corpus output from 01_pq_clean.Rmd with quarantined articles removed
 ```{r}
 #load data
-pq_metaclean <- data.table::fread('Data/02_Working/01_pq_metaclean.csv', colClasses = 'character')
+pq_metaclean <- data.table::fread('Data/02_Working/06_pq_metafilter.csv', colClasses = 'character')
 
-# 6239 articles total
-print(paste("Number of articles", nrow(pq_metaclean)))
+pq_topic1 <- data.table::fread('Data/02_Working/07_pq_topic1.csv', colClasses = 'character')
+#names(pq_topic1)
 
-# not_oyster_subset = if not exists in full_corpus {oyster*}
-# 2667 articles with the word "oyster" (OUT OF 6239)
-pq_metaoyster<- pq_metaclean %>% 
-  filter(stringr::str_detect(`Full text`,regex("oyster", ignore_case = T))) 
-print(paste("Number of articles with the word oyster", nrow(pq_metaoyster)))
-# Save oyster corpus to new file 
-outputFilenameOyster <- paste0(rFileNum,"_pq_metaoyster")
-outputFolder = "Data/02_Working/"
-outputFileOyster = paste(outputFolder,outputFilenameOyster,".csv",sep="")
-if (!file.exists(outputFileOyster) | overwrite) {
-  write.csv(pq_metaoyster, outputFileOyster, row.names=FALSE)
-}
+pq_topic1 <- pq_topic1 %>% select(`ProQuest document ID`)
 
-pq_metaqtine<- pq_metaclean %>% 
-  filter(!stringr::str_detect(`Full text`,regex("oyster", ignore_case = T))) 
-print(paste("Number of articles without the word oyster", nrow(pq_metaqtine)))
-# 3572 articles without the word "oyster" (OUT OF 6239)
-
-head(pq_metaqtine)
-
-# quarantined_subset = if exists in not_oyster_subset {clam|mussel|scallop|lobster|crab}
-# 2172 articles without "oyster" and with keywords (OUT OF 3572)
-#These are the quarantined articles that need to be examined
-pq_metaqtine_keywords <- pq_metaqtine %>% 
-  filter(stringr::str_detect(`Full text`,regex("clam|mussel|scallop|lobster|crab", ignore_case = T)))
-print(paste("Number of articles within *not oyster* that have the words clam|mussel|scallop|lobster|crab (to be removed from corpus)", nrow(pq_metaqtine_keywords)))
-# Save articles without "oyster" and with keywords (to be removed from corpus)
-outputFilenameQtine <- paste0(rFileNum,"_pq_metanotoyster_keywords")
-outputFolder = "Data/02_Working/"
-outputFileQtine = paste(outputFolder,outputFilenameQtine,".csv",sep="")
-if (!file.exists(outputFileQtine) | overwrite) {
-  write.csv(pq_metaqtine_keywords, outputFileQtine, row.names=FALSE)
-}
-
-# 1400 articles without "oyster" and without keywords (OUT OF 3572)
-pq_metaqtine_nokeywords <- pq_metaqtine %>% 
-  filter(!stringr::str_detect(`Full text`,regex("clam|mussel|scallop|lobster|crab", ignore_case = T)))
-print(paste("Number of articles within *not oyster* that do not have the words clam|mussel|scallop|lobster|crab (to be kept in corpus)", nrow(pq_metaqtine_nokeywords)))
-# Save articles without "oyster" and without keywords (to be kept in corpus)
-outputFilenameNotQtine <- paste0(rFileNum,"_pq_metanotoyster_notkeywords")
-outputFolder = "Data/02_Working/"
-outputFileNotQtine = paste(outputFolder,outputFilenameNotQtine,".csv",sep="")
-if (!file.exists(outputFileNotQtine) | overwrite) {
-  write.csv(pq_metaqtine_nokeywords, outputFileNotQtine, row.names=FALSE)
-}
-
-pq_metaqtine_ids <- pq_metaqtine_keywords %>% select(`ProQuest document ID`)
-# corpus_subset = anti_join(quarantined_subset, fullcorpus)
-
-# this is the entire corpus with quarantined articles removed
 pq_metafilter <- pq_metaclean %>%
-  anti_join(pq_metaqtine_ids, by="ProQuest document ID")
-
-# Save entire corpus with quarantined articles removed
-outputFilenameMetaFilter <- paste0(rFileNum,"_pq_metafilter")
-outputFolder = "Data/02_Working/"
-outputFileMetaFilter = paste(outputFolder,outputFilenameMetaFilter,".csv",sep="")
-if (!file.exists(outputFileMetaFilter) | overwrite) {
-  write.csv(pq_metafilter, outputFileMetaFilter, row.names=FALSE)
-}
+  anti_join(pq_topic1, by="ProQuest document ID")
 
 numFiltered <- nrow(pq_metaclean)-nrow(pq_metafilter)
-rm(pq_metaqtine_ids);rm(pq_metaclean);rm(pq_metaoyster);rm(pq_metaqtine);rm(pq_metaqtine_keywords);rm(pq_metaqtine_nokeywords)
 
-print(paste("Number of articles removed based on words:",numFiltered));nrow(pq_metafilter)
+# 4067
+print(paste("Number of articles pre-drop", nrow(pq_metaclean)))
+
+# 982 removed; 3085 articles total
+print(paste("Total number of articles post-drop:", nrow(pq_metafilter), "| Number of articles removed:",numFiltered))
+
+
+rm(pq_metaclean);rm(pq_topic1)
 
 ```
 
