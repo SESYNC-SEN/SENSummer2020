@@ -26,7 +26,7 @@ source("SEN_functions.R")
 
 ## Check libraries & install
 LibraryList<-c("dplyr","stringr","magrittr","data.table","tidytext","topicmodels","colorspace","purrr","ldatuning",
-               "gmp","wordcloud","RColorBrewer","ggplot2","lubridate","reshape2","textmineR","scales")
+               "gmp","wordcloud","RColorBrewer","ggplot2","lubridate","reshape2","textmineR","scales", "readxl")
 install_or_load_pack(LibraryList)
 
 outputFolder = "Data/02_Working/"
@@ -44,7 +44,7 @@ overwrite = FALSE
 # Load cleaned corpus output from 01_pq_clean.Rmd with quarantined articles removed
 ```{r}
 #load data
-pq_topics <- data.table::fread('Data/02_Working/09_pq_topics.csv', colClasses = 'character')
+pq_topics <- readxl::read_excel('Data/02_Working/09_pq_topics.xlsx', 1)
 
 pq_metafilter <- pq_topics %>%
   filter(topic==4 | topic==11 | topic ==15 | topic==9 | topic==2 | topic==5 | topic==8 | topic==3 | topic==7)
@@ -61,7 +61,6 @@ print(paste("Number of articles removed:",numFiltered, "| Total number of articl
 
 
 rm(pq_topics)
-
 ```
 
 
@@ -69,10 +68,8 @@ rm(pq_topics)
 ```{r}
 # subset corpus to unique identifier & full text of article
 pq_metasub <- pq_metafilter %>% 
-  select(`ProQuest document ID`,`Full text`)
+  select(`ProQuest document ID`, `Full text`)
 rm(pq_metafilter)
-
-
 ```
 
 # generate tokens based on custom_stop_words

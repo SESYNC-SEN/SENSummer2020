@@ -81,10 +81,8 @@ nrow(pq_empty)
 # write labeled corpus to CSV
 outputFileName = "pq_topics"
 outputFilexlsx = paste(outputFolder,rFileNum,"_",outputFileName,".xlsx",sep="")
-outputFilecsv = paste(outputFolder,rFileNum,"_",outputFileName,".csv",sep="")
 if (!file.exists(outputFilexlsx) | overwrite) {
   write.xlsx(pq_metajoin, outputFilexlsx, row.names=FALSE)
-  write.csv(pq_metajoin, outputFilecsv, row.names=FALSE)
   #write.htmltable(pq_metajoin,title=outputFile, outputFile, sortby="topic","val")
 }
 ```
