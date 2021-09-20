@@ -8,13 +8,13 @@ output:
 # STEP 3 - Review results from DTM_inferLDATopics_LabelCorpus
 
 This notebook:
-1. Reads in labeled outputs from 08_pq_model.Rmd ("08_pq_labels.csv")
-2. Joins "08_pq_labels.csv" with "01_pq_metaclean.csv"
+1. Reads in labeled outputs from 10_pq_model.Rmd ("10_pq_labels.csv")
+2. Joins "10_pq_labels.csv" with "01_pq_metaclean.csv"
 3. Subsets dataset based on labels and percent probabilities
 4. Writes subsets to CSVs
 
 # Notes
-1. "SUBSETTING" keyword for searching 09_pq_label_review.Rmd
+1. "SUBSETTING" keyword for searching 11_pq_label_review.Rmd
 
 ```{r, echo=FALSE, results="hide", messages=FALSE}
 # Load and Install Libraries
@@ -28,8 +28,8 @@ install_or_load_pack(LibraryList)
 
 outputFolder = "Data/02_Working/"
 outputImgFolder = "Images/"
-rFileNum = "09"
-rFileModelNum = "08"
+rFileNum = "11"
+rFileModelNum = "10"
 
 outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_review"))
 if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
@@ -223,11 +223,6 @@ knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/7_lda_topic_wc
 knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/8_lda_topic_wc.png"))
 knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/9_lda_topic_wc.png"))
 knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/10_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/11_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/12_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/13_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/14_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/15_lda_topic_wc.png"))
 ```
 # Count of Article by Topic
 ```{r, out.width="50%", fig.pos="h"}
