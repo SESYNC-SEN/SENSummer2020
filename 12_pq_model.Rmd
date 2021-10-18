@@ -6,8 +6,8 @@ output: html_notebook
 # STEP 6 - Subset based on quarantined dataset and re-run DTM and LDAs
 
 This notebook:
-1. Reads in the labeled results from 09_pq_label_review.Rmd ("09_pq_topics.xlsx")
-2. Removes topic 6, 14, 12, 1, 10, 13 based on results review
+1. Reads in the labeled results from 11_pq_label_review.Rmd ("11_pq_topics.xlsx")
+2. Removes topic 7 based on results review
 3. creates a Document Term Matrix 
 4. trains an LDA model
 5. Uses the LDA model to predict topic categories for each article in our corpus
@@ -31,7 +31,8 @@ install_or_load_pack(LibraryList)
 
 outputFolder = "Data/02_Working/"
 outputImgFolder = "Images/"
-rFileNum = "10"
+rFileNum = "12"
+prevReviewOutput = "11"
 
 outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_model"))
 if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
@@ -44,10 +45,10 @@ overwrite = FALSE
 # Load cleaned corpus output from 01_pq_clean.Rmd with quarantined articles removed
 ```{r}
 #load data
-pq_topics <- readxl::read_excel('Data/02_Working/09_pq_topics.xlsx', 1)
+pq_topics <- readxl::read_excel(paste0('Data/02_Working/',prevReviewOutput,'_pq_topics.xlsx'), 1)
 
 pq_metafilter <- pq_topics %>%
-  filter(topic==4 | topic==11 | topic ==15 | topic==9 | topic==2 | topic==5 | topic==8 | topic==3 | topic==7)
+  filter(topic==1 | topic==2 | topic ==3 | topic==4 | topic==5 | topic==6 | topic==8 | topic==9 | topic==10 | topic==11)
 
 unique(pq_metafilter$topic)
 
