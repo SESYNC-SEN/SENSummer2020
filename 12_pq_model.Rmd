@@ -45,10 +45,19 @@ overwrite = FALSE
 # Load cleaned corpus output from 01_pq_clean.Rmd with quarantined articles removed
 ```{r}
 #load data
+pq_metaclean <- data.table::fread('Data/02_Working/06_pq_metafilter.csv', colClasses = 'character')
+
 pq_topics <- readxl::read_excel(paste0('Data/02_Working/',prevReviewOutput,'_pq_topics.xlsx'), 1)
 
-pq_metafilter <- pq_topics %>%
-  filter(topic==1 | topic==2 | topic ==3 | topic==4 | topic==5 | topic==6 | topic==8 | topic==9 | topic==10 | topic==11)
+#pq_metafilter <- pq_topics %>%
+#  filter(topic==1 | topic==2 | topic ==3 | topic==4 | topic==5 | topic==6 | topic==8 | topic==9 | topic==10 | topic==11)
+
+pq_topicsub <- pq_topics %>%
+  filter(topic==1 | topic==2 | topic ==3 | topic==4 | topic==5 | topic==6 | topic==10 | topic==11) %>%
+  select(`ProQuest document ID`)
+
+pq_metafilter <- pq_topicsub %>%
+  left_join(pq_metaclean, by="ProQuest document ID")
 
 unique(pq_metafilter$topic)
 
@@ -70,6 +79,7 @@ rm(pq_topics)
 # subset corpus to unique identifier & full text of article
 pq_metasub <- pq_metafilter %>% 
   select(`ProQuest document ID`, `Full text`)
+nrow(pq_metasub)
 rm(pq_metafilter)
 ```
 
@@ -185,9 +195,15 @@ dev.off()
 #1. Top 20 terms based on phi
 ```{r}
 #select models based on max average
-max_coherence<-which.max(coherence_mat$coherence)
-#manual_coherence<-7
-model <- model_list[max_coherence][[ 1 ]]
+
+if (max_coherence>2) {
+  n <- length(max_coherence)
+  max_coherence<-sort(x,partial=n-1)[n-1]
+  model <- model_list[max_coherence][[ 1 ]]
+} else {
+  max_coherence<-which.max(coherence_mat$coherence)
+  model <- model_list[max_coherence][[ 1 ]]
+}
 
 #1. Top 20 terms based on phi
 model$top_terms <- GetTopTerms(phi = model$phi, M = 20)

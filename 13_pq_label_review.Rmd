@@ -22,7 +22,7 @@ source("SEN_functions.R")
 
 ## Check libraries & install
 LibraryList<-c("stringr","data.table","dplyr","tidyr","magrittr","NLP","tidytext","tm","ggplot2",
-               "scales", "ggwordcloud","textmineR","digest", "broom", "stringi", "xlsx")
+               "scales", "ggwordcloud","textmineR","digest", "broom", "stringi", "openxlsx")
 install_or_load_pack(LibraryList)
 
 
@@ -78,11 +78,34 @@ nrow(pq_metajoin);head(pq_metajoin)
 pq_empty<-pq_metajoin[pq_metajoin$topic == "" | is.na(pq_metajoin$topic),]
 nrow(pq_empty)
 
+
+topic_list <- pq_metajoin %>%
+  dplyr::distinct(topic) %>%
+  dplyr::mutate(topic = as.numeric(topic)) %>%
+  arrange(topic) %>%
+  dplyr::mutate(topic = as.character(topic)) %>%
+  pull(topic)
+
 # write labeled corpus to CSV
 outputFileName = "pq_topics"
 outputFilexlsx = paste(outputFolder,rFileNum,"_",outputFileName,".xlsx",sep="")
 if (!file.exists(outputFilexlsx) | overwrite) {
-  write.xlsx(pq_metajoin, outputFilexlsx, row.names=FALSE)
+  # blank wrkbook
+  xlsx_workbook <- createWorkbook()
+  addWorksheet(xlsx_workbook, "Summary")
+  addWorksheet(xlsx_workbook, "Master")
+  writeData(xlsx_workbook, sheet="Master", x=pq_metajoin)
+  for (t in topic_list){
+    print(t)
+    pq_topic <- pq_metajoin %>%
+      filter(topic==t)
+    addWorksheet(xlsx_workbook, t)
+    writeData(xlsx_workbook, sheet=t, x=pq_topic)
+  }
+  
+  saveWorkbook(xlsx_workbook, outputFilexlsx)
+  
+  #write.xlsx(pq_metajoin, outputFilexlsx, row.names=FALSE)
   #write.htmltable(pq_metajoin,title=outputFile, outputFile, sortby="topic","val")
 }
 ```
@@ -213,15 +236,15 @@ knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/coherence_scor
 ```{r, out.width="50%", fig.pos="h"}
 knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/1_lda_topic_wc.png"))
 knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/2_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/3_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/4_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/5_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/6_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/7_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/8_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/9_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/10_lda_topic_wc.png"))
-knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/11_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/3_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/4_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/5_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/6_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/7_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/8_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/9_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/10_lda_topic_wc.png"))
+#knitr::include_graphics(paste0("Images/",rFileModelNum,"_pq_model/11_lda_topic_wc.png"))
 ```
 # Count of Article by Topic
 ```{r, out.width="50%", fig.pos="h"}

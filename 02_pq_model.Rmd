@@ -49,6 +49,7 @@ names(pq_metaclean)
 # subset corpus to unique identifier & full text of article
 pq_metasub <- pq_metaclean %>% 
   select(`ProQuest document ID`,`Full text`)
+nrow(pq_metasub)
 rm(pq_metaclean)
 ```
 

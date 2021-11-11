@@ -67,6 +67,7 @@ print(paste("Number of removed 90% filtered articles:",numFiltered));nrow(pq_met
 # subset corpus to unique identifier & full text of article
 pq_metasub <- pq_metafilter %>% 
   select(`ProQuest document ID`,`Full text`)
+nrow(pq_metasub)
 rm(pq_metafilter)
 ```
 

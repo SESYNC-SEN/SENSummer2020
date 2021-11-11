@@ -7,7 +7,7 @@ output: html_notebook
 
 This notebook:
 1. Reads in the labeled results from 09_pq_label_review.Rmd ("09_pq_topics.xlsx")
-2. Removes topic 6, 14, 12, 1, 10, 13 based on results review
+2. Removes topic 1, 6, 10, 12, 13, 14 based on results review
 3. creates a Document Term Matrix 
 4. trains an LDA model
 5. Uses the LDA model to predict topic categories for each article in our corpus
@@ -44,10 +44,18 @@ overwrite = FALSE
 # Load cleaned corpus output from 01_pq_clean.Rmd with quarantined articles removed
 ```{r}
 #load data
+pq_metaclean <- data.table::fread('Data/02_Working/06_pq_metafilter.csv', colClasses = 'character')
+
 pq_topics <- readxl::read_excel('Data/02_Working/09_pq_topics.xlsx', 1)
 
-pq_metafilter <- pq_topics %>%
-  filter(topic==4 | topic==11 | topic ==15 | topic==9 | topic==2 | topic==5 | topic==8 | topic==3 | topic==7)
+pq_topicsub <- pq_topics %>%
+  filter(topic==2 | topic==3 |topic==4 | topic==5 |  topic==7 |  topic==8 | topic==9 |
+           topic==11 | topic ==15) %>%
+  select(`ProQuest document ID`)
+
+pq_metafilter <- pq_topicsub %>%
+  left_join(pq_metaclean, by="ProQuest document ID")
+
 
 unique(pq_metafilter$topic)
 
@@ -60,7 +68,7 @@ print(paste("Number of articles pre-drop", nrow(pq_topics)))
 print(paste("Number of articles removed:",numFiltered, "| Total number of articles post-drop:", nrow(pq_metafilter)))
 
 
-rm(pq_topics)
+rm(pq_topics);rm(pq_metaclean);rm(pq_topicsub)
 ```
 
 
@@ -69,6 +77,7 @@ rm(pq_topics)
 # subset corpus to unique identifier & full text of article
 pq_metasub <- pq_metafilter %>% 
   select(`ProQuest document ID`, `Full text`)
+nrow(pq_metasub)
 rm(pq_metafilter)
 ```
 
