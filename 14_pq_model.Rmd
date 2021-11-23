@@ -198,12 +198,13 @@ dev.off()
 ```{r}
 #select models based on max coherence
 max_coherence<-which.max(coherence_mat$coherence)
+ind<-2
 
 if (nextHighestTwoTopics) {
   # if number of topics are less than or equal to 2, grab second highest coherence
   if (max_coherence<=2) {
-    n <- length(max_coherence)
-    max_coherence<-sort(x,partial=n-1)[n-1]
+    n <- length(coherence_mat$coherence)
+    max_coherence<-which(coherence_mat$coherence == sort(unique(coherence_mat$coherence),partial=n-ind+1)[n-ind+1])
     model <- model_list[max_coherence][[ 1 ]]
     } else {
       model <- model_list[max_coherence][[ 1 ]]
