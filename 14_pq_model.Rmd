@@ -6,8 +6,8 @@ output: html_notebook
 # STEP 6 - Subset based on quarantined dataset and re-run DTM and LDAs
 
 This notebook:
-1. Reads in the labeled results from 11_pq_label_review.Rmd ("11_pq_topics.xlsx")
-2. Removes topic 7 based on results review
+1. Reads in the labeled results from 13_pq_label_review.Rmd ("13_pq_topics.xlsx")
+2. Removes topic 1, 10 based on results review
 3. creates a Document Term Matrix 
 4. trains an LDA model
 5. Uses the LDA model to predict topic categories for each article in our corpus
@@ -31,8 +31,8 @@ install_or_load_pack(LibraryList)
 
 outputFolder = "Data/02_Working/"
 outputImgFolder = "Images/"
-rFileNum = "12"
-prevReviewOutput = "11"
+rFileNum = "14"
+prevReviewOutput = "13"
 
 nextHighestTwoTopics = TRUE
 
@@ -55,7 +55,9 @@ pq_topics <- readxl::read_excel(paste0('Data/02_Working/',prevReviewOutput,'_pq_
 #  filter(topic==1 | topic==2 | topic ==3 | topic==4 | topic==5 | topic==6 | topic==8 | topic==9 | topic==10 | topic==11)
 
 pq_topicsub <- pq_topics %>%
-  filter(topic==1 | topic==2 | topic ==3 | topic==4 | topic==5 | topic==6 | topic==10 | topic==11) %>%
+  filter(topic==2 | topic==3 | topic==4 | topic==5 | topic==6 | topic==7 | topic==8 | topic==9 | 
+           topic==11 | topic==12 | topic==13 | topic==14 | topic==15 | topic==16 | topic==17 | 
+           topic==18 | topic==19 | topic==20) %>%
   select(`ProQuest document ID`)
 
 pq_metafilter <- pq_topicsub %>%
@@ -210,6 +212,7 @@ if (nextHighestTwoTopics) {
   # nextHighestTwoTopics was FALSE, so use highest even if it's only 2 topics
   model <- model_list[max_coherence][[ 1 ]]
 }
+
 
 #1. Top 20 terms based on phi
 model$top_terms <- GetTopTerms(phi = model$phi, M = 20)

@@ -32,6 +32,7 @@ install_or_load_pack(LibraryList)
 outputFolder = "Data/02_Working/"
 outputImgFolder = "Images/"
 rFileNum = "10"
+prevReviewOutput = "09"
 
 outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_model"))
 if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
@@ -44,9 +45,9 @@ overwrite = FALSE
 # Load cleaned corpus output from 01_pq_clean.Rmd with quarantined articles removed
 ```{r}
 #load data
-pq_metaclean <- data.table::fread('Data/02_Working/06_pq_metafilter.csv', colClasses = 'character')
+pq_metaclean <- data.table::fread('Data/02_Working/01_pq_metaclean.csv')
 
-pq_topics <- readxl::read_excel('Data/02_Working/09_pq_topics.xlsx', 1)
+pq_topics <- readxl::read_excel(paste0('Data/02_Working/',prevReviewOutput,'_pq_topics.xlsx'), 1)
 
 pq_topicsub <- pq_topics %>%
   filter(topic==2 | topic==3 |topic==4 | topic==5 |  topic==7 |  topic==8 | topic==9 |
@@ -55,9 +56,6 @@ pq_topicsub <- pq_topics %>%
 
 pq_metafilter <- pq_topicsub %>%
   left_join(pq_metaclean, by="ProQuest document ID")
-
-
-unique(pq_metafilter$topic)
 
 numFiltered <- nrow(pq_topics)-nrow(pq_metafilter)
 

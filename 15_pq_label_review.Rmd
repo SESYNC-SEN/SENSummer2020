@@ -8,8 +8,8 @@ output:
 # STEP 3 - Review results from DTM_inferLDATopics_LabelCorpus
 
 This notebook:
-1. Reads in labeled outputs from 12_pq_model.Rmd ("12_pq_labels.csv")
-2. Joins "12_pq_labels.csv" with "01_pq_metaclean.csv"
+1. Reads in labeled outputs from 14_pq_model.Rmd ("14_pq_labels.csv")
+2. Joins "14_pq_labels.csv" with "01_pq_metaclean.csv"
 3. Subsets dataset based on labels and percent probabilities
 4. Writes subsets to CSVs
 
@@ -28,8 +28,8 @@ install_or_load_pack(LibraryList)
 
 outputFolder = "Data/02_Working/"
 outputImgFolder = "Images/"
-rFileNum = "13"
-rFileModelNum = "12"
+rFileNum = "15"
+rFileModelNum = "14"
 
 outputPngFolder<-file.path(outputImgFolder, paste0(rFileNum,"_pq_review"))
 if (!dir.exists(outputPngFolder)) dir.create(outputPngFolder)
@@ -266,6 +266,7 @@ if (file.exists(hclust_filename)) {
 } else {
   paste0("Dendrogram not available - topics: [",paste(topic_list, collapse=", "),"]")
 }
+
 ```
 
 
